@@ -18,6 +18,7 @@ public sealed class Form1 : Form
     private AppSettings settings = new();
     private readonly CodeAnalysisService codeAnalysisService = new();
     private readonly FormatService formatService = new();
+    private readonly CodeSymbolService codeSymbolService = new();
     private readonly SearchService searchService = new();
     private readonly AiAgentService aiAgentService = new();
     private readonly LanguageRunnerService languageRunnerService = new();
@@ -84,6 +85,7 @@ public sealed class Form1 : Form
         Add(editMenu, "Rechercher…", (_, _) => FindText(), Keys.Control | Keys.F);
         Add(editMenu, "Remplacer…", (_, _) => ReplaceText(), Keys.Control | Keys.H);
         Add(editMenu, "Aller à la ligne…", (_, _) => GoToLine(), Keys.Control | Keys.G);
+        Add(editMenu, "Aller au symbole…", (_, _) => GoToSymbol(), Keys.Control | Keys.Shift | Keys.O);
         Add(editMenu, "Formater le document", (_, _) => FormatCurrent(), Keys.Control | Keys.Shift | Keys.I);
         Add(editMenu, "Rechercher dans les fichiers…", (_, _) => SearchInFiles(), Keys.Control | Keys.Shift | Keys.F);
         Add(editMenu, "Remplacer dans les fichiers…", (_, _) => ReplaceInFiles(), Keys.Control | Keys.Shift | Keys.H);
@@ -406,6 +408,7 @@ public sealed class Form1 : Form
             ("Édition : Rechercher", FindText),
             ("Édition : Remplacer", ReplaceText),
             ("Édition : Aller à la ligne", GoToLine),
+            ("Édition : Aller au symbole", GoToSymbol),
             ("Édition : Formater le document", FormatCurrent),
             ("Projet : Compiler", CompileProject),
             ("Projet : Exécuter", RunProject),
@@ -932,6 +935,17 @@ public sealed class Form1 : Form
         var position = GetLineStartOffset(editor.Text, line);
         editor.Select(Math.Min(position, editor.Text.Length), 0);
         status.Text = $"Ligne {line} sélectionnée.";
+    }
+
+    private void GoToSymbol()
+    {
+        var editor = Editor();
+        if (editor is null) return;
+        var symbols = codeSymbolService.GetSymbols(editor.Text);
+        if (symbols.Count == 0) { status.Text = "Aucun symbole trouvé dans ce fichier."; return; }
+        using var palette = new CommandPaletteForm(symbols.Select(symbol =>
+            (symbol.Display, (Action)(() => SelectEditorPosition(symbol.Line, symbol.Column)))));
+        palette.ShowDialog(this);
     }
 
     private void FormatCurrent()
