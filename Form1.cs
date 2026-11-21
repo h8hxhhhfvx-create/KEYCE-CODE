@@ -248,15 +248,23 @@ public sealed class Form1 : Form
     private void CompileProject()
     {
         if (!TrySetProjectPath()) return;
-        bottomTabs?.SelectTab("Compilation");
+        SelectBottomTab("Compilation");
         if (outputViewModel.CompileCommand.CanExecute(null)) outputViewModel.CompileCommand.Execute(null);
     }
 
     private void RunProject()
     {
         if (!TrySetProjectPath()) return;
-        bottomTabs?.SelectTab("Compilation");
+        SelectBottomTab("Compilation");
         if (outputViewModel.RunCommand.CanExecute(null)) outputViewModel.RunCommand.Execute(null);
+    }
+
+    private void SelectBottomTab(string title)
+    {
+        if (bottomTabs is null) return;
+        var page = bottomTabs.TabPages.Cast<TabPage>()
+            .FirstOrDefault(candidate => string.Equals(candidate.Text, title, StringComparison.Ordinal));
+        if (page is not null) bottomTabs.SelectedTab = page;
     }
 
     private bool TrySetProjectPath()
