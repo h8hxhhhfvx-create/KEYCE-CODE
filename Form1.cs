@@ -154,6 +154,7 @@ public sealed class Form1 : Form
         try
         {
             var snapshot = await gitService.GetStatusAsync();
+            SelectBottomTab("Sortie");
             output.Clear();
             output.AppendText($"Branche : {snapshot.Branch}\r\n");
             output.AppendText(snapshot.Files.Count == 0
@@ -337,7 +338,7 @@ public sealed class Form1 : Form
     private void ShowShortcuts()
     {
         MessageBox.Show(this,
-            "Ctrl+N  Nouveau fichier\nCtrl+O  Ouvrir\nCtrl+S  Enregistrer\nCtrl+Maj+S  Enregistrer sous\nCtrl+W  Fermer l’onglet\nCtrl+Z  Annuler\nCtrl+Y  Rétablir\nCtrl+F  Rechercher\nCtrl+H  Remplacer\nCtrl+G  Aller à la ligne\nCtrl+Maj+I  Formater le document\nCtrl++ / Ctrl+-  Zoomer\nCtrl+0  Taille normale\nCtrl+Maj+F  Rechercher dans les fichiers\nF5  Exécuter",
+            "Ctrl+N  Nouveau fichier\nCtrl+O  Ouvrir\nCtrl+S  Enregistrer\nCtrl+Maj+S  Enregistrer sous\nCtrl+W  Fermer l’onglet\nCtrl+Z  Annuler\nCtrl+Y  Rétablir\nCtrl+F  Rechercher\nCtrl+H  Remplacer\nCtrl+G  Aller à la ligne\nCtrl+Maj+I  Formater le document\nCtrl++ / Ctrl+-  Zoomer\nCtrl+0  Taille normale\nCtrl+Maj+F  Rechercher dans les fichiers\nCtrl+Espace  Auto-complétion C#\nF5  Exécuter",
             "Raccourcis clavier — KEYCE CODE",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
