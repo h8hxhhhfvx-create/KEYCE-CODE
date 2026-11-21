@@ -19,6 +19,7 @@ public sealed class Form1 : Form
     private readonly CodeAnalysisService codeAnalysisService = new();
     private readonly SearchService searchService = new();
     private readonly List<(int Start, int End, int Line, int Column)> diagnosticRanges = new();
+    private readonly List<(int Start, int End, string FilePath, int Line, int Column)> searchRanges = new();
     private readonly OutputViewModel outputViewModel = new();
     private readonly TerminalViewModel terminalViewModel = new();
     private TabControl? bottomTabs;
@@ -446,6 +447,7 @@ public sealed class Form1 : Form
             var results = searchService.Search(root, query);
             SelectBottomTab("Sortie");
             output.Clear();
+            searchRanges.Clear();
             if (results.Count == 0)
             {
                 output.Text = $"Aucun résultat pour « {query} ».";
@@ -453,7 +455,12 @@ public sealed class Form1 : Form
                 return;
             }
 
-            foreach (var result in results) output.AppendText($"{result.FilePath}({result.Line},{result.Column}) : {result.Text.Trim()}\r\n");
+            foreach (var result in results)
+            {
+                var start = output.TextLength;
+                output.AppendText($"{result.FilePath}({result.Line},{result.Column}) : {result.Text.Trim()}\r\n");
+                searchRanges.Add((start, output.TextLength, result.FilePath, result.Line, result.Column));
+            }
             status.Text = $"Recherche terminée : {results.Count} résultat(s).";
         }
         catch (Exception ex)
@@ -473,6 +480,7 @@ public sealed class Form1 : Form
             SelectBottomTab("Sortie");
             output.Clear();
             diagnosticRanges.Clear();
+            searchRanges.Clear();
 
             if (diagnostics.Count == 0)
             {
@@ -500,15 +508,29 @@ public sealed class Form1 : Form
     {
         var index = output.GetCharIndexFromPosition(e.Location);
         var diagnostic = diagnosticRanges.FirstOrDefault(d => index >= d.Start && index < d.End);
-        if (diagnostic.Line == 0) return;
+        if (diagnostic.Line != 0)
+        {
+            SelectEditorPosition(diagnostic.Line, diagnostic.Column);
+            return;
+        }
+
+        var search = searchRanges.FirstOrDefault(s => index >= s.Start && index < s.End);
+        if (string.IsNullOrWhiteSpace(search.FilePath)) return;
+        OpenPath(search.FilePath);
+        SelectEditorPosition(search.Line, search.Column);
+    }
+
+    private void SelectEditorPosition(int line, int column)
+    {
+        if (line <= 0) return;
 
         var editor = Editor();
         if (editor is null) return;
 
-        var position = GetLineStartOffset(editor.Text, diagnostic.Line) + Math.Max(0, diagnostic.Column - 1);
+        var position = GetLineStartOffset(editor.Text, line) + Math.Max(0, column - 1);
         editor.Select(Math.Min(position, editor.Text.Length), 0);
         editor.Focus();
-        status.Text = $"Erreur sélectionnée : ligne {diagnostic.Line}, colonne {diagnostic.Column}";
+        status.Text = $"Position sélectionnée : ligne {line}, colonne {column}";
     }
 
     private void OpenDiagnostic(BuildDiagnostic diagnostic)
