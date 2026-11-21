@@ -39,6 +39,7 @@ public sealed class Form1 : Form
         output.MouseDoubleClick += Output_MouseDoubleClick;
         outputViewModel.DiagnosticActivated += OpenDiagnostic;
         FormClosing += (_, e) => { if (tabs.TabPages.Cast<TabPage>().Any(t => !CanClose(t))) e.Cancel = true; };
+        FormClosed += (_, _) => { outputViewModel.Stop(); terminalViewModel.Stop(); };
     }
 
     private void BuildLayout()
