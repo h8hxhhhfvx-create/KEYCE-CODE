@@ -26,4 +26,20 @@ public sealed class AiAgentServiceTests
         }
         finally { Directory.Delete(root, true); }
     }
+
+    [Fact]
+    public async Task ReadProjectContext_IncludesRelevantFilesAndSkipsBuildFolders()
+    {
+        var root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "keyce-agent-" + Guid.NewGuid())).FullName;
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "Demo.cs"), "class Demo { }");
+            Directory.CreateDirectory(Path.Combine(root, "bin"));
+            await File.WriteAllTextAsync(Path.Combine(root, "bin", "Hidden.cs"), "secret");
+            var context = new AiAgentService().ReadProjectContext(root);
+            Assert.Contains("Demo.cs", context, StringComparison.Ordinal);
+            Assert.DoesNotContain("Hidden.cs", context, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(root, true); }
+    }
 }

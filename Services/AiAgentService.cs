@@ -19,9 +19,11 @@ public sealed class AiAgentService
     {
         var root = GetRoot(projectRoot);
         if (string.IsNullOrWhiteSpace(instruction)) throw new ArgumentException("La demande de l’agent est vide.", nameof(instruction));
+        var projectContext = ReadProjectContext(root);
         var prompt = "Tu es l’agent de modification de KEYCE CODE. Réponds uniquement avec un ou plusieurs blocs exactement sous la forme " +
             "<file path=\"chemin/relatif\">contenu complet du fichier</file>. Les chemins doivent être relatifs au projet. " +
             "Ne modifie jamais de fichier directement et n’inclus aucune explication hors des blocs. Demande utilisateur : " + instruction;
+        prompt += "\nContexte des fichiers du projet (lecture seule) :\n" + projectContext;
         if (!string.IsNullOrWhiteSpace(currentContext)) prompt += "\nContexte du fichier courant :\n" + currentContext;
         var response = await chatService.ChatAsync(endpoint, model, [("system", prompt)], cancellationToken);
         return ParsePlan(root, response);
@@ -74,6 +76,37 @@ public sealed class AiAgentService
         if (changes.Count == 0) throw new InvalidOperationException("L’agent n’a proposé aucun bloc de fichier exploitable.");
         return changes;
     }
+
+    public string ReadProjectContext(string projectRoot)
+    {
+        var root = GetRoot(projectRoot);
+        var files = Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
+            .Where(path => IsContextFile(path) && !path.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar) &&
+                           !path.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar))
+            .OrderBy(path => path)
+            .Take(20);
+        var builder = new System.Text.StringBuilder();
+        var remaining = 16_000;
+        foreach (var file in files)
+        {
+            if (remaining <= 0) break;
+            try
+            {
+                var content = File.ReadAllText(file);
+                var relative = Path.GetRelativePath(root, file);
+                var excerpt = content.Length > 3_000 ? content[..3_000] + "\n[tronqué]" : content;
+                var block = $"\n--- {relative} ---\n{excerpt}\n";
+                if (block.Length > remaining) block = block[..remaining];
+                builder.Append(block);
+                remaining -= block.Length;
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+        return builder.Length == 0 ? "(aucun fichier de contexte lisible)" : builder.ToString();
+    }
+
+    private static bool IsContextFile(string path) => Path.GetExtension(path).ToLowerInvariant() is ".cs" or ".csproj" or ".sln" or ".slnx" or ".md";
 
     private static string GetRoot(string projectRoot)
     {
