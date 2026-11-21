@@ -45,6 +45,7 @@ public sealed class Form1 : Form
     private ToolStrip? toolBar;
     private StatusStrip? statusStrip;
     private readonly RichTextBox output = new() { Dock = DockStyle.Fill, ReadOnly = true, BackColor = Color.FromArgb(20, 22, 27), ForeColor = Color.Gainsboro, BorderStyle = BorderStyle.None, Font = new Font("Cascadia Mono", 10) };
+    private Label? outputHeader;
     private readonly ToolStripStatusLabel status = new("Prêt") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
     private readonly ToolStripStatusLabel cursorStatus = new("Ln 1, Col 1") { TextAlign = ContentAlignment.MiddleRight };
     private string? workspace;
@@ -175,7 +176,8 @@ public sealed class Form1 : Form
         editorOutput.Panel1.Controls.Add(tabs);
         var outputPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(20, 22, 27) };
         outputPanel.Controls.Add(output);
-        outputPanel.Controls.Add(new Label { Text = "  SORTIE", Dock = DockStyle.Top, Height = 28, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Silver, BackColor = Color.FromArgb(30, 33, 40), Font = new Font("Segoe UI", 9, FontStyle.Bold) });
+        outputHeader = new Label { Text = "  SORTIE", Dock = DockStyle.Top, Height = 28, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Silver, BackColor = Color.FromArgb(30, 33, 40), Font = new Font("Segoe UI", 9, FontStyle.Bold) };
+        outputPanel.Controls.Add(outputHeader);
         bottomTabs = new TabControl { Dock = DockStyle.Fill, MinimumSize = new Size(0, 220) };
         bottomTabs.TabPages.Add(new TabPage("Sortie") { Controls = { outputPanel } });
         bottomTabs.TabPages.Add(CreateWpfTab("Compilation", new OutputView { DataContext = outputViewModel }));
@@ -610,6 +612,11 @@ public sealed class Form1 : Form
         aiChatView?.ApplyTheme(dark);
         output.BackColor = dark ? Color.FromArgb(20, 22, 27) : Color.White;
         output.ForeColor = dark ? Color.Gainsboro : Color.FromArgb(32, 35, 40);
+        if (outputHeader is not null)
+        {
+            outputHeader.BackColor = dark ? Color.FromArgb(30, 33, 40) : Color.FromArgb(232, 235, 240);
+            outputHeader.ForeColor = dark ? Color.Silver : Color.FromArgb(32, 35, 40);
+        }
     }
 
     private void ToggleLearningMode()
