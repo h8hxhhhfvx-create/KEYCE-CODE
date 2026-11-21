@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Drawing;
 using System.Text.RegularExpressions;
+using System.Windows.Forms.Integration;
+using KeyceCode.Models;
 using KeyceCode.Services;
 using KeyceCode.ViewModels;
 using KeyceCode.Views;
@@ -14,6 +16,9 @@ public sealed class Form1 : Form
     private readonly FileService fileService = new();
     private readonly CodeAnalysisService codeAnalysisService = new();
     private readonly List<(int Start, int End, int Line, int Column)> diagnosticRanges = new();
+    private readonly OutputViewModel outputViewModel = new();
+    private readonly TerminalViewModel terminalViewModel = new();
+    private TabControl? bottomTabs;
     private readonly RichTextBox output = new() { Dock = DockStyle.Fill, ReadOnly = true, BackColor = Color.FromArgb(20, 22, 27), ForeColor = Color.Gainsboro, BorderStyle = BorderStyle.None, Font = new Font("Cascadia Mono", 10) };
     private readonly ToolStripStatusLabel status = new("Prêt") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
     private string? workspace;
@@ -24,6 +29,7 @@ public sealed class Form1 : Form
         BackColor = Color.FromArgb(37, 40, 48); ForeColor = Color.Gainsboro; StartPosition = FormStartPosition.CenterScreen;
         BuildLayout();
         output.MouseDoubleClick += Output_MouseDoubleClick;
+        outputViewModel.DiagnosticActivated += OpenDiagnostic;
         FormClosing += (_, e) => { if (tabs.TabPages.Cast<TabPage>().Any(t => !CanClose(t))) e.Cancel = true; };
     }
 
@@ -54,12 +60,18 @@ public sealed class Form1 : Form
         var bar = new ToolStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, GripStyle = ToolStripGripStyle.Hidden, Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
         Button(bar, "＋ Nouveau", () => NewFile()); Button(bar, "Ouvrir", OpenFile); Button(bar, "Projet C#", OpenProject); Button(bar, "Dossier", OpenWorkspace); Button(bar, "Enregistrer", SaveCurrent);
         bar.Items.Add(new ToolStripSeparator()); Button(bar, "▶ Exécuter (F5)", async () => await RunCurrent());
+        Button(bar, "🔨 Compiler", CompileProject); Button(bar, "▶ Projet", RunProject);
         Button(bar, "🔍 Analyser", AnalyzeCurrent);
 
         var split = new SplitContainer { Size = new Size(1200, 700), Dock = DockStyle.Fill, SplitterDistance = 260, BackColor = Color.FromArgb(37, 40, 48), Panel1MinSize = 180, Panel2MinSize = 400 };
         split.Panel1.Controls.Add(explorer);
         explorer.FileOpenRequested += OpenPath;
-        explorer.ProjectOpened += project => { workspace = project.RootPath; status.Text = $"Projet : {project.Name}"; };
+        explorer.ProjectOpened += project =>
+        {
+            workspace = project.RootPath;
+            SetProjectContext(project.RootPath);
+            status.Text = $"Projet : {project.Name}";
+        };
         explorer.ItemRenamed += UpdateOpenPaths;
         explorer.BeforeDelete += ConfirmOpenFilesBeforeDelete;
         var editorOutput = new SplitContainer { Size = new Size(900, 700), Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 520, BackColor = Color.FromArgb(37, 40, 48), Panel1MinSize = 180, Panel2MinSize = 100 };
@@ -67,11 +79,30 @@ public sealed class Form1 : Form
         var outputPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(20, 22, 27) };
         outputPanel.Controls.Add(output);
         outputPanel.Controls.Add(new Label { Text = "  SORTIE", Dock = DockStyle.Top, Height = 28, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Silver, BackColor = Color.FromArgb(30, 33, 40), Font = new Font("Segoe UI", 9, FontStyle.Bold) });
-        editorOutput.Panel2.Controls.Add(outputPanel); split.Panel2.Controls.Add(editorOutput);
+        bottomTabs = new TabControl { Dock = DockStyle.Fill };
+        bottomTabs.TabPages.Add(new TabPage("Sortie") { Controls = { outputPanel } });
+        bottomTabs.TabPages.Add(CreateWpfTab("Compilation", new OutputView { DataContext = outputViewModel }));
+        bottomTabs.TabPages.Add(CreateWpfTab("Terminal", new TerminalView { DataContext = terminalViewModel }));
+        editorOutput.Panel2.Controls.Add(bottomTabs); split.Panel2.Controls.Add(editorOutput);
         var strip = new StatusStrip { BackColor = Color.FromArgb(0, 104, 156), ForeColor = Color.White }; strip.Items.Add(status);
         Controls.Add(split); Controls.Add(bar); Controls.Add(menu); Controls.Add(strip);
         bar.Dock = DockStyle.Top; menu.Dock = DockStyle.Top; strip.Dock = DockStyle.Bottom;
         NewFile();
+    }
+
+    private static TabPage CreateWpfTab(string title, System.Windows.Controls.UserControl view)
+    {
+        var host = new ElementHost { Dock = DockStyle.Fill, Child = view };
+        var page = new TabPage(title);
+        page.Controls.Add(host);
+        return page;
+    }
+
+    private void SetProjectContext(string path)
+    {
+        outputViewModel.ProjectPath = path;
+        var directory = Directory.Exists(path) ? path : Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory)) terminalViewModel.SetWorkingDirectory(directory);
     }
 
     private static void Add(ToolStripMenuItem parent, string label, EventHandler action, Keys shortcut = Keys.None)
@@ -101,7 +132,7 @@ public sealed class Form1 : Form
         {
             var page = new TabPage(Path.GetFileName(path)) { Tag = path, BackColor = Color.FromArgb(30, 33, 40) };
             var surface = new CodeEditorSurface(); page.Controls.Add(surface); surface.ApplyLanguage(Path.GetExtension(path)); surface.Text = fileService.ReadText(path); surface.Modified = false;
-            tabs.TabPages.Add(page); tabs.SelectedTab = page; UpdateTitle(page); status.Text = path;
+            tabs.TabPages.Add(page); tabs.SelectedTab = page; UpdateTitle(page); SetProjectContext(workspace ?? path); status.Text = path;
         }
         catch (Exception ex) { MessageBox.Show(this, $"Impossible d’ouvrir le fichier.\n{ex.Message}", "KeyceCode", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
@@ -114,6 +145,41 @@ public sealed class Form1 : Form
     }
 
     private void SaveCurrent() { if (tabs.SelectedTab is { } page) SavePage(page); }
+
+    private void SaveAllOpenFiles()
+    {
+        foreach (var page in tabs.TabPages.Cast<TabPage>().ToList())
+            if (EditorOf(page)?.Modified == true) SavePage(page);
+    }
+
+    private void CompileProject()
+    {
+        if (!TrySetProjectPath()) return;
+        bottomTabs?.SelectTab("Compilation");
+        if (outputViewModel.CompileCommand.CanExecute(null)) outputViewModel.CompileCommand.Execute(null);
+    }
+
+    private void RunProject()
+    {
+        if (!TrySetProjectPath()) return;
+        bottomTabs?.SelectTab("Compilation");
+        if (outputViewModel.RunCommand.CanExecute(null)) outputViewModel.RunCommand.Execute(null);
+    }
+
+    private bool TrySetProjectPath()
+    {
+        var path = workspace ?? PathOf();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            MessageBox.Show(this, "Ouvrez un projet, un dossier ou un fichier avant de compiler.", "KEYCE CODE", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return false;
+        }
+
+        SetProjectContext(path);
+        outputViewModel.SaveAllRequested -= SaveAllOpenFiles;
+        outputViewModel.SaveAllRequested += SaveAllOpenFiles;
+        return true;
+    }
     private void SaveAs()
     {
         if (tabs.SelectedTab is not { } page) return;
@@ -239,6 +305,21 @@ public sealed class Form1 : Form
         var editor = Editor();
         if (editor is null) return;
 
+        var position = GetLineStartOffset(editor.Text, diagnostic.Line) + Math.Max(0, diagnostic.Column - 1);
+        editor.Select(Math.Min(position, editor.Text.Length), 0);
+        editor.Focus();
+        status.Text = $"Erreur sélectionnée : ligne {diagnostic.Line}, colonne {diagnostic.Column}";
+    }
+
+    private void OpenDiagnostic(BuildDiagnostic diagnostic)
+    {
+        var file = diagnostic.File;
+        if (!Path.IsPathRooted(file) && !string.IsNullOrWhiteSpace(workspace))
+            file = Path.Combine(workspace, file);
+        if (File.Exists(file)) OpenPath(file);
+
+        var editor = Editor();
+        if (editor is null) return;
         var position = GetLineStartOffset(editor.Text, diagnostic.Line) + Math.Max(0, diagnostic.Column - 1);
         editor.Select(Math.Min(position, editor.Text.Length), 0);
         editor.Focus();
