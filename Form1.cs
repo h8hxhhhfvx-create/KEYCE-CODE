@@ -23,6 +23,7 @@ public sealed class Form1 : Form
     private readonly SearchService searchService = new();
     private readonly AiAgentService aiAgentService = new();
     private readonly LanguageRunnerService languageRunnerService = new();
+    private readonly ScriptRunnerService scriptRunnerService = new();
     private readonly TestService testService = new();
     private readonly DebuggerService debuggerService = new();
     private readonly ExtensionService extensionService = new();
@@ -59,7 +60,8 @@ public sealed class Form1 : Form
         debuggerService.OutputReceived += DebuggerOutputReceived;
         debuggerService.SnapshotUpdated += DebuggerSnapshotUpdated;
         FormClosing += (_, e) => { if (tabs.TabPages.Cast<TabPage>().Any(t => !CanClose(t))) e.Cancel = true; };
-        FormClosed += async (_, _) => { liveAnalysisCancellation?.Cancel(); outputViewModel.Stop(); terminalViewModel.Stop(); await debuggerService.DisposeAsync(); };
+        scriptRunnerService.OutputReceived += ScriptOutputReceived;
+        FormClosed += async (_, _) => { liveAnalysisCancellation?.Cancel(); outputViewModel.Stop(); terminalViewModel.Stop(); scriptRunnerService.Stop(); await debuggerService.DisposeAsync(); };
     }
 
     private void BuildLayout()
@@ -107,6 +109,8 @@ public sealed class Form1 : Form
         Add(runMenu, "Ajouter/retirer un point d’arrêt", (_, _) => ToggleBreakpoint(), Keys.F9);
         Add(runMenu, "Démarrer le débogage", async (_, _) => await StartDebuggingAsync(), Keys.F5 | Keys.Shift);
         Add(runMenu, "Arrêter le débogage", async (_, _) => await StopDebuggingAsync());
+        Add(runMenu, "Arrêter le fichier en cours", (_, _) => StopCurrentRun());
+        Add(runMenu, "Envoyer une saisie au fichier…", (_, _) => SendScriptInput());
         Add(runMenu, "Continuer le débogage", async (_, _) => await ContinueDebuggingAsync(), Keys.F5);
         Add(runMenu, "Pas à pas principal", async (_, _) => await StepDebuggingAsync("over"), Keys.F10);
         Add(runMenu, "Entrer dans la fonction", async (_, _) => await StepDebuggingAsync("into"), Keys.F11);
@@ -1189,15 +1193,39 @@ public sealed class Form1 : Form
             output.Text = $"Aucun exécuteur configuré pour {ext}.\r\nExtensions prises en charge : {string.Join(", ", languageRunnerService.SupportedExtensions.OrderBy(value => value))}.";
             return;
         }
-        output.Clear(); output.AppendText($"> {exe} {args}\r\n\r\n"); status.Text = "Exécution en cours…";
+        await RunScriptAsync(new LanguageCommand(command!.Language, exe, args), file);
+    }
+
+    private async Task RunScriptAsync(LanguageCommand command, string file)
+    {
+        output.Clear(); output.AppendText($"> {command.Executable} {command.Arguments}\r\n\r\n"); status.Text = "Exécution en cours…";
         try
         {
-            using var process = new Process { StartInfo = new ProcessStartInfo(exe, args) { WorkingDirectory = Path.GetDirectoryName(file)!, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true } };
-            process.Start(); var stdout = process.StandardOutput.ReadToEndAsync(); var stderr = process.StandardError.ReadToEndAsync(); await process.WaitForExitAsync();
-            output.AppendText(await stdout); var errors = await stderr; if (errors.Length > 0) output.AppendText(errors);
-            output.AppendText($"\r\n[Terminé avec le code {process.ExitCode}]"); status.Text = $"Terminé (code {process.ExitCode})";
+            var exitCode = await scriptRunnerService.RunAsync(command, Path.GetDirectoryName(file)!);
+            output.AppendText($"\r\n[Terminé avec le code {exitCode}]");
+            status.Text = exitCode == 0 ? "Exécution terminée." : $"Échec (code {exitCode})";
         }
-        catch (Exception ex) { output.AppendText($"Erreur : {ex.Message}\r\nVérifiez que l’outil est installé et accessible dans PATH."); status.Text = "Échec de l’exécution"; }
+        catch (Exception ex) { output.AppendText($"Erreur : {ex.Message}"); status.Text = "Échec de l’exécution"; }
+    }
+
+    private void ScriptOutputReceived(string text, OutputKind kind)
+    {
+        if (IsDisposed) return;
+        BeginInvoke(() => output.AppendText(text));
+    }
+
+    private void StopCurrentRun()
+    {
+        if (!scriptRunnerService.IsRunning) { status.Text = "Aucun fichier en cours d’exécution."; return; }
+        scriptRunnerService.Stop();
+        status.Text = "Arrêt du fichier demandé.";
+    }
+
+    private void SendScriptInput()
+    {
+        if (!scriptRunnerService.IsRunning) { status.Text = "Aucun fichier interactif en cours."; return; }
+        var text = Microsoft.VisualBasic.Interaction.InputBox("Texte à envoyer au programme :", "Entrée du programme");
+        if (text.Length > 0) scriptRunnerService.SendInput(text);
     }
     private static string Quote(string value) => $"\"{value.Replace("\"", "\\\"")}\"";
     private static async Task<(string, string)> CSharpCommand(string file)
