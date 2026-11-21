@@ -20,6 +20,7 @@ public sealed class Form1 : Form
     private readonly FormatService formatService = new();
     private readonly SearchService searchService = new();
     private readonly AiAgentService aiAgentService = new();
+    private readonly LanguageRunnerService languageRunnerService = new();
     private GitService? gitService;
     private readonly List<(int Start, int End, int Line, int Column)> diagnosticRanges = new();
     private readonly List<(int Start, int End, string FilePath, int Line, int Column)> searchRanges = new();
@@ -770,13 +771,13 @@ public sealed class Form1 : Form
             return;
         }
 
-        var (exe, args) = ext switch
+        var command = languageRunnerService.Resolve(file);
+        var (exe, args) = command is null ? ("", "") : (command.Executable, command.Arguments);
+        if (exe.Length == 0)
         {
-            ".py" => ("python", Quote(file)), ".js" => ("node", Quote(file)), ".ps1" => ("powershell", $"-NoProfile -ExecutionPolicy Bypass -File {Quote(file)}"),
-            ".bat" or ".cmd" => ("cmd", $"/c {Quote(file)}"), ".cs" => await CSharpCommand(file),
-            _ => ("", "")
-        };
-        if (exe.Length == 0) { output.Text = $"Aucun exécuteur configuré pour {ext}.\r\nLangages pris en charge : C#, Python, JavaScript, PowerShell et Batch."; return; }
+            output.Text = $"Aucun exécuteur configuré pour {ext}.\r\nExtensions prises en charge : {string.Join(", ", languageRunnerService.SupportedExtensions.OrderBy(value => value))}.";
+            return;
+        }
         output.Clear(); output.AppendText($"> {exe} {args}\r\n\r\n"); status.Text = "Exécution en cours…";
         try
         {
