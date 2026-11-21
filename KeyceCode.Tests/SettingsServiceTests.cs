@@ -41,4 +41,29 @@ public sealed class SettingsServiceTests
         Assert.Equal("Dark", settings.Theme);
         Assert.Equal(13, settings.EditorFontSize);
     }
+
+    [Fact]
+    public void LoadInvalidValues_NormalizesThemToSafeDefaults()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "KeyceCodeSettings", Guid.NewGuid().ToString("N"), "settings.json");
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "{\"Theme\":\"Blue\",\"EditorFontSize\":99,\"TabSize\":3,\"OllamaEndpoint\":\"  http://server///  \",\"OllamaModel\":\"  model  \",\"LearningMode\":true,\"ExamMode\":true}");
+
+            var settings = new SettingsService(path).Load();
+
+            Assert.Equal("Dark", settings.Theme);
+            Assert.Equal(32, settings.EditorFontSize);
+            Assert.Equal(4, settings.TabSize);
+            Assert.Equal("http://server", settings.OllamaEndpoint);
+            Assert.Equal("model", settings.OllamaModel);
+            Assert.False(settings.LearningMode);
+        }
+        finally
+        {
+            var directory = Path.GetDirectoryName(path);
+            if (directory is not null && Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
 }

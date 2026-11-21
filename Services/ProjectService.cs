@@ -51,7 +51,7 @@ public sealed class ProjectService
     {
         foreach (var pattern in new[] { "*.sln", "*.slnx", "*.csproj" })
         {
-            var match = Directory.EnumerateFiles(root, pattern, SearchOption.AllDirectories)
+            var match = EnumerateFilesSafely(root, pattern)
                 .FirstOrDefault(path => !path.Split(Path.DirectorySeparatorChar).Any(IgnoredFolders.Contains));
             if (match is not null) return match;
         }
@@ -60,7 +60,7 @@ public sealed class ProjectService
 
     private static void AddChildren(List<CodeFile> target, string directory)
     {
-        foreach (var childDirectory in Directory.EnumerateDirectories(directory)
+        foreach (var childDirectory in EnumerateDirectoriesSafely(directory)
                      .Where(path => !IgnoredFolders.Contains(Path.GetFileName(path)))
                      .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
         {
@@ -69,7 +69,32 @@ public sealed class ProjectService
             AddChildren(child.Children, childDirectory);
         }
 
-        foreach (var path in Directory.EnumerateFiles(directory).OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
+        foreach (var path in EnumerateFilesSafely(directory).OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
             target.Add(new CodeFile { Name = Path.GetFileName(path), FullPath = path });
+    }
+
+    private static IEnumerable<string> EnumerateDirectoriesSafely(string directory)
+    {
+        try { return Directory.EnumerateDirectories(directory).ToArray(); }
+        catch (UnauthorizedAccessException) { return []; }
+        catch (IOException) { return []; }
+    }
+
+    private static IEnumerable<string> EnumerateFilesSafely(string directory, string pattern = "*")
+    {
+        var pending = new Stack<string>([directory]);
+        var results = new List<string>();
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            try { results.AddRange(Directory.EnumerateFiles(current, pattern)); }
+            catch (UnauthorizedAccessException) { continue; }
+            catch (IOException) { continue; }
+
+            foreach (var child in EnumerateDirectoriesSafely(current)
+                         .Where(path => !IgnoredFolders.Contains(Path.GetFileName(path))))
+                pending.Push(child);
+        }
+        return results;
     }
 }

@@ -7,9 +7,9 @@ internal sealed class SettingsDialog : Form
     private readonly ComboBox theme = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly NumericUpDown fontSize = new() { Minimum = 8, Maximum = 32, DecimalPlaces = 0 };
     private readonly ComboBox tabSize = new() { DropDownStyle = ComboBoxStyle.DropDownList };
-    private readonly CheckBox wordWrap = new() { Text = "Retour automatique à la ligne" };
-    private readonly CheckBox learningMode = new() { Text = "Mode apprentissage" };
-    private readonly CheckBox examMode = new() { Text = "Mode examen" };
+    private readonly CheckBox wordWrap = new() { Text = "Retour automatique à la ligne", AutoSize = true };
+    private readonly CheckBox learningMode = new() { Text = "Mode apprentissage", AutoSize = true };
+    private readonly CheckBox examMode = new() { Text = "Mode examen", AutoSize = true };
     private readonly TextBox endpoint = new();
     private readonly TextBox model = new();
 

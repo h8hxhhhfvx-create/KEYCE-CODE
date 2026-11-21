@@ -21,7 +21,7 @@ public sealed class SettingsService
         {
             if (!File.Exists(settingsPath)) return new AppSettings();
             var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(settingsPath));
-            return settings ?? new AppSettings();
+            return Normalize(settings ?? new AppSettings());
         }
         catch (JsonException) { return new AppSettings(); }
         catch (IOException) { return new AppSettings(); }
@@ -32,7 +32,20 @@ public sealed class SettingsService
         var directory = Path.GetDirectoryName(settingsPath)
             ?? throw new IOException("Le dossier des paramètres est introuvable.");
         Directory.CreateDirectory(directory);
-        var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
+        var json = JsonSerializer.Serialize(Normalize(settings), new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(settingsPath, json);
+    }
+
+    private static AppSettings Normalize(AppSettings settings)
+    {
+        settings.Theme = string.Equals(settings.Theme, "Light", StringComparison.OrdinalIgnoreCase) ? "Light" : "Dark";
+        settings.EditorFontSize = Math.Clamp(settings.EditorFontSize, 8, 32);
+        settings.TabSize = settings.TabSize is 2 or 4 or 8 ? settings.TabSize : 4;
+        settings.OllamaEndpoint = string.IsNullOrWhiteSpace(settings.OllamaEndpoint)
+            ? "http://localhost:11434"
+            : settings.OllamaEndpoint.Trim().TrimEnd('/');
+        settings.OllamaModel = string.IsNullOrWhiteSpace(settings.OllamaModel) ? "qwen2.5:7b" : settings.OllamaModel.Trim();
+        if (settings.ExamMode) settings.LearningMode = false;
+        return settings;
     }
 }
