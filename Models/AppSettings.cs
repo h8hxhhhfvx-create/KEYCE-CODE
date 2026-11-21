@@ -10,4 +10,5 @@ public sealed class AppSettings
     public string OllamaModel { get; set; } = "qwen2.5:7b";
     public bool LearningMode { get; set; }
     public bool ExamMode { get; set; }
+    public List<string> RecentProjects { get; set; } = [];
 }

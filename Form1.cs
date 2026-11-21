@@ -40,6 +40,7 @@ public sealed class Form1 : Form
     private TabControl? bottomTabs;
     private MenuStrip? menuStrip;
     private ToolStripMenuItem? extensionsMenu;
+    private ToolStripMenuItem? recentProjectsMenu;
     private ToolStripMenuItem? aiMenu;
     private ToolStrip? toolBar;
     private StatusStrip? statusStrip;
@@ -73,6 +74,8 @@ public sealed class Form1 : Form
         Add(fileMenu, "Ouvrir…", (_, _) => OpenFile(), Keys.Control | Keys.O);
         Add(fileMenu, "Ouvrir un projet C#…", (_, _) => OpenProject());
         Add(fileMenu, "Ouvrir un dossier de projet…", (_, _) => OpenWorkspace());
+        recentProjectsMenu = new ToolStripMenuItem("Projets récents");
+        fileMenu.DropDownItems.Add(recentProjectsMenu);
         fileMenu.DropDownItems.Add(new ToolStripSeparator());
         Add(fileMenu, "Enregistrer", (_, _) => SaveCurrent(), Keys.Control | Keys.S);
         Add(fileMenu, "Enregistrer sous…", (_, _) => SaveAs(), Keys.Control | Keys.Shift | Keys.S);
@@ -157,6 +160,7 @@ public sealed class Form1 : Form
         {
             workspace = project.RootPath;
             SetProjectContext(project.RootPath);
+            RememberRecentProject(project.EntryFilePath ?? project.RootPath);
             status.Text = $"Projet : {project.Name}";
         };
         explorer.ItemRenamed += UpdateOpenPaths;
@@ -184,6 +188,7 @@ public sealed class Form1 : Form
         ApplyChromeTheme();
         tabs.SelectedIndexChanged += (_, _) => { UpdateCursorStatus(Editor()); UpdateAiContext(); };
         NewFile();
+        RefreshRecentProjectsMenu();
         RefreshExtensions();
         ApplyPedagogicalMode();
     }
@@ -466,6 +471,55 @@ public sealed class Form1 : Form
     }
     private void OpenProject() => explorer.OpenProjectDialog(this);
 
+    private void OpenRecentProject(string path)
+    {
+        if (!File.Exists(path) && !Directory.Exists(path))
+        {
+            settings.RecentProjects.RemoveAll(item => string.Equals(item, path, StringComparison.OrdinalIgnoreCase));
+            settingsService.Save(settings);
+            RefreshRecentProjectsMenu();
+            status.Text = "Le projet récent n’existe plus.";
+            return;
+        }
+        try { explorer.OpenProject(path); }
+        catch (Exception ex) { MessageBox.Show(this, $"Impossible d’ouvrir le projet récent.\n{ex.Message}", "KEYCE CODE", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private void RememberRecentProject(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        settings.RecentProjects.RemoveAll(item => string.Equals(item, fullPath, StringComparison.OrdinalIgnoreCase));
+        settings.RecentProjects.Insert(0, fullPath);
+        if (settings.RecentProjects.Count > 10) settings.RecentProjects.RemoveRange(10, settings.RecentProjects.Count - 10);
+        settingsService.Save(settings);
+        RefreshRecentProjectsMenu();
+    }
+
+    private void RefreshRecentProjectsMenu()
+    {
+        if (recentProjectsMenu is null) return;
+        recentProjectsMenu.DropDownItems.Clear();
+        var valid = settings.RecentProjects.Where(path => File.Exists(path) || Directory.Exists(path)).ToList();
+        if (valid.Count == 0)
+        {
+            recentProjectsMenu.DropDownItems.Add(new ToolStripMenuItem("Aucun projet récent") { Enabled = false });
+        }
+        else
+        {
+            foreach (var path in valid)
+            {
+                var item = new ToolStripMenuItem($"{Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))} — {path}");
+                item.ToolTipText = path;
+                item.Click += (_, _) => OpenRecentProject(path);
+                recentProjectsMenu.DropDownItems.Add(item);
+            }
+        }
+        recentProjectsMenu.DropDownItems.Add(new ToolStripSeparator());
+        var clear = new ToolStripMenuItem("Effacer l’historique");
+        clear.Click += (_, _) => { settings.RecentProjects.Clear(); settingsService.Save(settings); RefreshRecentProjectsMenu(); };
+        recentProjectsMenu.DropDownItems.Add(clear);
+    }
+
     private void OpenWorkspace()
     {
         using var dialog = new FolderBrowserDialog { Description = "Choisissez le dossier contenant un projet C#" };
@@ -635,6 +689,7 @@ public sealed class Form1 : Form
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         settings = dialog.GetSettings();
         settingsService.Save(settings);
+        RefreshRecentProjectsMenu();
         ApplyChromeTheme();
         foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
             ApplyEditorSettings(surface);

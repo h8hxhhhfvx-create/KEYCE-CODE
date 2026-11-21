@@ -4,6 +4,7 @@ namespace KeyceCode.Views;
 
 internal sealed class SettingsDialog : Form
 {
+    private readonly List<string> recentProjects;
     private readonly ComboBox theme = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly NumericUpDown fontSize = new() { Minimum = 8, Maximum = 32, DecimalPlaces = 0 };
     private readonly ComboBox tabSize = new() { DropDownStyle = ComboBoxStyle.DropDownList };
@@ -15,6 +16,7 @@ internal sealed class SettingsDialog : Form
 
     public SettingsDialog(AppSettings current)
     {
+        recentProjects = [.. current.RecentProjects];
         Text = "Paramètres — KEYCE CODE";
         Width = 540; Height = 430; MinimumSize = new Size(500, 380);
         AutoScaleMode = AutoScaleMode.Font;
@@ -63,7 +65,8 @@ internal sealed class SettingsDialog : Form
         LearningMode = learningMode.Checked,
         ExamMode = examMode.Checked,
         OllamaEndpoint = endpoint.Text.Trim().TrimEnd('/'),
-        OllamaModel = model.Text.Trim()
+        OllamaModel = model.Text.Trim(),
+        RecentProjects = [.. recentProjects]
     };
 
     private static void AddRow(TableLayoutPanel table, int row, string label, Control control)

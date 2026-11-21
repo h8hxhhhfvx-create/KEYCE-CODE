@@ -66,4 +66,28 @@ public sealed class SettingsServiceTests
             if (directory is not null && Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
         }
     }
+
+    [Fact]
+    public void LoadRecentProjects_DeduplicatesAndLimitsHistory()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "KeyceCodeSettings", Guid.NewGuid().ToString("N"), "settings.json");
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var projects = Enumerable.Range(0, 12).Select(index => Path.Combine(Path.GetTempPath(), $"Project-{index}")).ToList();
+            projects.Add(projects[0]);
+            File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(new AppSettings { RecentProjects = projects }));
+
+            var settings = new SettingsService(path).Load();
+
+            Assert.Equal(10, settings.RecentProjects.Count);
+            Assert.Equal(Path.GetFullPath(projects[0]), settings.RecentProjects[0]);
+            Assert.Equal(settings.RecentProjects.Count, settings.RecentProjects.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        }
+        finally
+        {
+            var directory = Path.GetDirectoryName(path);
+            if (directory is not null && Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
 }
