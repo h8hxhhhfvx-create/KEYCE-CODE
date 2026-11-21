@@ -43,4 +43,20 @@ public sealed class SearchServiceTests
             Directory.Delete(root, recursive: true);
         }
     }
+
+    [Fact]
+    public void ReplaceAll_ReplacesEveryOccurrenceAndReportsCount()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "KeyceCodeSearch", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var file = Path.Combine(root, "Demo.cs");
+            File.WriteAllText(file, "one ONE two");
+            var result = Assert.Single(new SearchService().ReplaceAll(root, "one", "X"));
+            Assert.Equal(2, result.Occurrences);
+            Assert.Equal("X X two", File.ReadAllText(file));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
 }

@@ -86,6 +86,7 @@ public sealed class Form1 : Form
         Add(editMenu, "Aller à la ligne…", (_, _) => GoToLine(), Keys.Control | Keys.G);
         Add(editMenu, "Formater le document", (_, _) => FormatCurrent(), Keys.Control | Keys.Shift | Keys.I);
         Add(editMenu, "Rechercher dans les fichiers…", (_, _) => SearchInFiles(), Keys.Control | Keys.Shift | Keys.F);
+        Add(editMenu, "Remplacer dans les fichiers…", (_, _) => ReplaceInFiles(), Keys.Control | Keys.Shift | Keys.H);
         var viewMenu = new ToolStripMenuItem("Affichage");
         Add(viewMenu, "Palette de commandes…", (_, _) => ShowCommandPalette(), Keys.Control | Keys.Shift | Keys.P);
         Add(viewMenu, "Thème sombre", (_, _) => SetTheme("Dark"));
@@ -994,6 +995,32 @@ public sealed class Form1 : Form
         {
             MessageBox.Show(this, ex.Message, "Erreur de recherche", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private void ReplaceInFiles()
+    {
+        var root = workspace ?? (PathOf() is { } file ? Path.GetDirectoryName(file) : null);
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            MessageBox.Show(this, "Ouvrez un dossier ou un fichier avant de remplacer dans les fichiers.", "Remplacement", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        var query = Microsoft.VisualBasic.Interaction.InputBox("Texte à rechercher dans le projet :", "Remplacer dans les fichiers");
+        if (string.IsNullOrEmpty(query)) return;
+        var replacement = Microsoft.VisualBasic.Interaction.InputBox("Remplacer par :", "Remplacer dans les fichiers");
+        try
+        {
+            var matches = searchService.Search(root, query);
+            if (matches.Count == 0) { status.Text = "Aucun résultat à remplacer."; return; }
+            var answer = MessageBox.Show(this, $"{matches.Count} ligne(s) correspondent. Remplacer dans les fichiers ?", "Confirmation", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            if (answer != DialogResult.Yes) return;
+            var results = searchService.ReplaceAll(root, query, replacement);
+            output.Clear();
+            foreach (var result in results) output.AppendText($"{result.FilePath} : {result.Occurrences} occurrence(s) remplacée(s).\r\n");
+            status.Text = $"Remplacement terminé : {results.Sum(result => result.Occurrences)} occurrence(s).";
+            explorer.RefreshProject();
+        }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Erreur de remplacement", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 
     private void AnalyzeCurrent()
