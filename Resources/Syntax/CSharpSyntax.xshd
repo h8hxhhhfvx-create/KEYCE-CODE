@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SyntaxDefinition name="C#" extensions=".cs" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Comment" foreground="#6A9955" />
+  <Color name="String" foreground="#CE9178" />
+  <Color name="Keyword" foreground="#569CD6" />
+  <Color name="Type" foreground="#4EC9B0" />
+  <Color name="Number" foreground="#B5CEA8" />
+  <RuleSet>
+    <Span color="Comment" begin="//" end="$" />
+    <Span color="Comment" begin="/\*" end="\*/" />
+    <Span color="String" begin="&quot;" end="&quot;" escapeCharacter="\" />
+    <Span color="String" begin="@&quot;" end="&quot;&quot;" escapeCharacter="\" />
+    <Keywords color="Keyword">
+      <Word>abstract</Word><Word>as</Word><Word>async</Word><Word>await</Word><Word>base</Word>
+      <Word>bool</Word><Word>break</Word><Word>case</Word><Word>catch</Word><Word>class</Word>
+      <Word>const</Word><Word>continue</Word><Word>default</Word><Word>delegate</Word><Word>do</Word>
+      <Word>double</Word><Word>else</Word><Word>enum</Word><Word>event</Word><Word>finally</Word>
+      <Word>for</Word><Word>foreach</Word><Word>if</Word><Word>interface</Word><Word>internal</Word>
+      <Word>is</Word><Word>lock</Word><Word>namespace</Word><Word>new</Word><Word>null</Word>
+      <Word>object</Word><Word>operator</Word><Word>out</Word><Word>override</Word><Word>params</Word>
+      <Word>private</Word><Word>protected</Word><Word>public</Word><Word>readonly</Word><Word>ref</Word>
+      <Word>return</Word><Word>sealed</Word><Word>static</Word><Word>string</Word><Word>struct</Word>
+      <Word>switch</Word><Word>this</Word><Word>throw</Word><Word>true</Word><Word>try</Word>
+      <Word>typeof</Word><Word>using</Word><Word>var</Word><Word>virtual</Word><Word>void</Word>
+      <Word>while</Word>
+    </Keywords>
+    <Keywords color="Type">
+      <Word>int</Word><Word>long</Word><Word>short</Word><Word>byte</Word><Word>char</Word>
+      <Word>decimal</Word><Word>float</Word><Word>uint</Word><Word>ulong</Word><Word>ushort</Word>
+      <Word>Task</Word><Word>List</Word><Word>Dictionary</Word><Word>Console</Word>
+    </Keywords>
+    <Rule color="Number">\b0[xX][0-9a-fA-F]+\b|\b[0-9]+(\.[0-9]+)?\b</Rule>
+  </RuleSet>
+</SyntaxDefinition>
