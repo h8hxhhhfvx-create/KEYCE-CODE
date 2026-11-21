@@ -63,7 +63,7 @@ public sealed class DebuggerService : IAsyncDisposable
         initializeCompleted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         initializedEvent = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         configurationCompleted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _ = ReadMessagesAsync(adapter.StandardOutput, cancellationToken);
+        _ = ReadMessagesAsync(adapter.StandardOutput.BaseStream, cancellationToken);
         _ = ReadErrorsAsync(adapter.StandardError, cancellationToken);
 
         await SendAsync("initialize", new { clientID = "keyce-code", clientName = "KEYCE CODE", adapterID = "coreclr", linesStartAt1 = true, columnsStartAt1 = true, pathFormat = "path" });
@@ -166,29 +166,16 @@ public sealed class DebuggerService : IAsyncDisposable
         finally { writeLock.Release(); }
     }
 
-    private async Task ReadMessagesAsync(StreamReader reader, CancellationToken cancellationToken)
+    private async Task ReadMessagesAsync(Stream stream, CancellationToken cancellationToken)
     {
         try
         {
-            while (!cancellationToken.IsCancellationRequested && await reader.ReadLineAsync(cancellationToken) is { } header)
+            while (!cancellationToken.IsCancellationRequested)
             {
-                if (!header.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase)) continue;
-                if (!int.TryParse(header[15..].Trim(), out var length)) continue;
-                await reader.ReadLineAsync(cancellationToken);
-                var buffer = new char[length];
-                var offset = 0;
-                while (offset < length)
-                {
-                    var read = await reader.ReadAsync(buffer.AsMemory(offset, length - offset), cancellationToken);
-                    if (read == 0) break;
-                    offset += read;
-                }
-                if (offset > 0)
-                {
-                    var json = new string(buffer, 0, offset);
-                    OutputReceived?.Invoke(json + "\r\n");
-                    await HandleMessageAsync(json);
-                }
+                var json = await DapMessageReader.ReadMessageAsync(stream, cancellationToken);
+                if (json is null) break;
+                OutputReceived?.Invoke(json + "\r\n");
+                await HandleMessageAsync(json);
             }
         }
         catch (OperationCanceledException) { }
