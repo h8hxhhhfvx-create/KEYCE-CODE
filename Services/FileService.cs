@@ -18,9 +18,16 @@ public sealed class FileService
     public CodeFile CreateFile(string directory, string name)
     {
         ValidateName(name);
-        var path = Path.Combine(directory, name);
-        using (File.Create(path)) { }
-        return new CodeFile { Name = name, FullPath = Path.GetFullPath(path) };
+        var path = Path.GetFullPath(Path.Combine(directory, name));
+        try
+        {
+            using (File.Open(path, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { }
+        }
+        catch (IOException exception) when (File.Exists(path) || Directory.Exists(path))
+        {
+            throw new IOException("Un fichier ou dossier portant ce nom existe déjà.", exception);
+        }
+        return new CodeFile { Name = name, FullPath = path };
     }
 
     public string CreateDirectory(string parentDirectory, string name)

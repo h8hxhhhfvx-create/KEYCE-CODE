@@ -40,6 +40,16 @@ public sealed class FileServiceTests : IDisposable
     }
 
     [Fact]
+    public void CreateFile_DoesNotOverwriteAnExistingFile()
+    {
+        var path = Path.Combine(root, "Program.cs");
+        File.WriteAllText(path, "contenu à conserver");
+
+        Assert.Throws<IOException>(() => service.CreateFile(root, "Program.cs"));
+        Assert.Equal("contenu à conserver", File.ReadAllText(path));
+    }
+
+    [Fact]
     public void Rename_ChangesTheFileNameAndKeepsItsContent()
     {
         var original = Path.Combine(root, "Old.cs");
