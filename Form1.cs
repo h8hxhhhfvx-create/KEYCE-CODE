@@ -93,6 +93,7 @@ public sealed class Form1 : Form
         Add(gitMenu, "Tirer les changements", async (_, _) => await PullGitAsync());
         Add(gitMenu, "Envoyer les changements", async (_, _) => await PushGitAsync());
         var aiMenu = new ToolStripMenuItem("IA");
+        Add(aiMenu, "Configurer Ollama…", (_, _) => ConfigureOllama());
         Add(aiMenu, "Agent : proposer une modification…", async (_, _) => await GenerateAgentPlanAsync());
         Add(aiMenu, "Agent : annuler la dernière modification", async (_, _) => await RestoreAgentPlanAsync());
         var helpMenu = new ToolStripMenuItem("Aide");
@@ -432,6 +433,22 @@ public sealed class Form1 : Form
             "À propos de KEYCE CODE",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
+    }
+
+    private void ConfigureOllama()
+    {
+        var endpoint = Microsoft.VisualBasic.Interaction.InputBox(
+            "Adresse du serveur Ollama :", "Configuration Ollama", settings.OllamaEndpoint);
+        if (string.IsNullOrWhiteSpace(endpoint)) return;
+
+        var model = Microsoft.VisualBasic.Interaction.InputBox(
+            "Nom du modèle Ollama :", "Configuration Ollama", settings.OllamaModel);
+        if (string.IsNullOrWhiteSpace(model)) return;
+
+        settings.OllamaEndpoint = endpoint.Trim().TrimEnd('/');
+        settings.OllamaModel = model.Trim();
+        settingsService.Save(settings);
+        status.Text = $"Ollama configuré : {settings.OllamaModel}";
     }
 
     private void SaveAllOpenFiles()
