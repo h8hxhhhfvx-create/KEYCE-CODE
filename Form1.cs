@@ -21,6 +21,7 @@ public sealed class Form1 : Form
     private readonly SearchService searchService = new();
     private readonly AiAgentService aiAgentService = new();
     private readonly LanguageRunnerService languageRunnerService = new();
+    private readonly TestService testService = new();
     private GitService? gitService;
     private readonly List<(int Start, int End, int Line, int Column)> diagnosticRanges = new();
     private readonly List<(int Start, int End, string FilePath, int Line, int Column)> searchRanges = new();
@@ -88,6 +89,7 @@ public sealed class Form1 : Form
         Add(viewMenu, "Tabulations : 4 espaces", (_, _) => SetTabSize(4));
         Add(viewMenu, "Tabulations : 8 espaces", (_, _) => SetTabSize(8));
         var runMenu = new ToolStripMenuItem("Exécuter"); Add(runMenu, "Lancer le fichier", async (_, _) => await RunCurrent(), Keys.F5);
+        Add(runMenu, "Lancer les tests du projet", async (_, _) => await RunTestsAsync());
         var gitMenu = new ToolStripMenuItem("Git");
         Add(gitMenu, "Actualiser l’état", async (_, _) => await RefreshGitStatusAsync());
         Add(gitMenu, "Créer un commit…", async (_, _) => await CommitChangesAsync());
@@ -107,7 +109,7 @@ public sealed class Form1 : Form
         Button(bar, "＋ Nouveau", () => NewFile()); Button(bar, "Ouvrir", OpenFile); Button(bar, "Projet C#", OpenProject); Button(bar, "Dossier", OpenWorkspace); Button(bar, "Enregistrer", SaveCurrent);
         bar.Items.Add(new ToolStripSeparator()); Button(bar, "▶ Exécuter (F5)", async () => await RunCurrent());
         Button(bar, "🔨 Compiler", CompileProject); Button(bar, "▶ Projet", RunProject);
-        Button(bar, "🔍 Analyser", AnalyzeCurrent);
+        Button(bar, "🧪 Tests", async () => await RunTestsAsync()); Button(bar, "🔍 Analyser", AnalyzeCurrent);
 
         var split = new SplitContainer { Size = new Size(1200, 700), Dock = DockStyle.Fill, SplitterDistance = 260, BackColor = Color.FromArgb(37, 40, 48), Panel1MinSize = 180, Panel2MinSize = 400 };
         split.Panel1.Controls.Add(explorer);
@@ -120,12 +122,15 @@ public sealed class Form1 : Form
         };
         explorer.ItemRenamed += UpdateOpenPaths;
         explorer.BeforeDelete += ConfirmOpenFilesBeforeDelete;
-        var editorOutput = new SplitContainer { Size = new Size(900, 700), Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 520, BackColor = Color.FromArgb(37, 40, 48), Panel1MinSize = 180, Panel2MinSize = 100 };
+        // Le panneau inférieur contient plusieurs vues (console, terminal, IA) dont
+        // les barres d'actions et les champs de saisie doivent rester entièrement
+        // visibles, même lorsque la fenêtre n'est pas maximisée.
+        var editorOutput = new SplitContainer { Size = new Size(900, 700), Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 520, BackColor = Color.FromArgb(37, 40, 48), Panel1MinSize = 180, Panel2MinSize = 150 };
         editorOutput.Panel1.Controls.Add(tabs);
         var outputPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(20, 22, 27) };
         outputPanel.Controls.Add(output);
         outputPanel.Controls.Add(new Label { Text = "  SORTIE", Dock = DockStyle.Top, Height = 28, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Silver, BackColor = Color.FromArgb(30, 33, 40), Font = new Font("Segoe UI", 9, FontStyle.Bold) });
-        bottomTabs = new TabControl { Dock = DockStyle.Fill };
+        bottomTabs = new TabControl { Dock = DockStyle.Fill, MinimumSize = new Size(0, 150) };
         bottomTabs.TabPages.Add(new TabPage("Sortie") { Controls = { outputPanel } });
         bottomTabs.TabPages.Add(CreateWpfTab("Compilation", new OutputView { DataContext = outputViewModel }));
         bottomTabs.TabPages.Add(CreateWpfTab("Terminal", new TerminalView { DataContext = terminalViewModel }));
@@ -463,6 +468,32 @@ public sealed class Form1 : Form
         if (!TrySetProjectPath()) return;
         SelectBottomTab("Compilation");
         if (outputViewModel.CompileCommand.CanExecute(null)) outputViewModel.CompileCommand.Execute(null);
+    }
+
+    private async Task RunTestsAsync()
+    {
+        var root = workspace ?? (PathOf() is { } file ? Path.GetDirectoryName(file) : null);
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            MessageBox.Show(this, "Ouvrez un projet ou un dossier avant de lancer les tests.", "Tests", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        try
+        {
+            SelectBottomTab("Sortie");
+            output.Clear();
+            output.AppendText("> dotnet test\r\n\r\n");
+            status.Text = "Tests en cours…";
+            var result = await testService.RunAsync(root);
+            output.AppendText(result.Output);
+            output.AppendText($"\r\nRésultat : {result.Passed} réussi(s), {result.Failed} échec(s), {result.Skipped} ignoré(s).\r\n");
+            status.Text = result.Success ? $"Tests réussis : {result.Passed}." : $"Tests échoués : {result.Failed}.";
+        }
+        catch (Exception ex)
+        {
+            output.AppendText("\r\nErreur : " + ex.Message);
+            status.Text = "Échec des tests.";
+        }
     }
 
     private void RunProject()
