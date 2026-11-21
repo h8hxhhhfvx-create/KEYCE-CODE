@@ -8,4 +8,6 @@ public sealed class AppSettings
     public int TabSize { get; set; } = 4;
     public string OllamaEndpoint { get; set; } = "http://localhost:11434";
     public string OllamaModel { get; set; } = "qwen2.5:7b";
+    public bool LearningMode { get; set; }
+    public bool ExamMode { get; set; }
 }

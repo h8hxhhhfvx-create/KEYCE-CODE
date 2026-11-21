@@ -4,6 +4,13 @@ public partial class AiChatView
 {
     public AiChatView() => InitializeComponent();
 
+    public void SetExamMode(bool enabled)
+    {
+        InputBox.IsReadOnly = enabled;
+        InputBox.Text = enabled ? string.Empty : InputBox.Text;
+        SendButton.IsEnabled = !enabled;
+    }
+
     public void ApplyTheme(bool dark)
     {
         var background = dark ? "#1E2128" : "#FAFAFA";

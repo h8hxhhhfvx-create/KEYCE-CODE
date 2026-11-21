@@ -8,6 +8,7 @@ internal sealed class CodeEditorSurface : UserControl
 {
     private readonly ElementHost host = new() { Dock = DockStyle.Fill };
     private readonly EditorView editorView = new();
+    private bool examMode;
 
     public CodeEditorSurface()
     {
@@ -60,4 +61,13 @@ internal sealed class CodeEditorSurface : UserControl
     public void Copy() => editorView.Copy();
     public void Paste() => editorView.Paste();
     public void ReplaceText(string text) => editorView.ReplaceText(text);
+
+    public void SetExamMode(bool enabled) => examMode = enabled;
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (examMode && (keyData == (Keys.Control | Keys.C) || keyData == (Keys.Control | Keys.X) || keyData == (Keys.Control | Keys.V)))
+            return true;
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
 }

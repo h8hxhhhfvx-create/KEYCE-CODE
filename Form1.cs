@@ -37,6 +37,7 @@ public sealed class Form1 : Form
     private TabControl? bottomTabs;
     private MenuStrip? menuStrip;
     private ToolStripMenuItem? extensionsMenu;
+    private ToolStripMenuItem? aiMenu;
     private ToolStrip? toolBar;
     private StatusStrip? statusStrip;
     private readonly RichTextBox output = new() { Dock = DockStyle.Fill, ReadOnly = true, BackColor = Color.FromArgb(20, 22, 27), ForeColor = Color.Gainsboro, BorderStyle = BorderStyle.None, Font = new Font("Cascadia Mono", 10) };
@@ -113,6 +114,7 @@ public sealed class Form1 : Form
         Add(gitMenu, "Créer une branche…", async (_, _) => await CreateGitBranchAsync());
         Add(gitMenu, "Changer de branche…", async (_, _) => await CheckoutGitBranchAsync());
         var aiMenu = new ToolStripMenuItem("IA");
+        this.aiMenu = aiMenu;
         Add(aiMenu, "Configurer Ollama…", (_, _) => ConfigureOllama());
         Add(aiMenu, "Agent : proposer une modification…", async (_, _) => await GenerateAgentPlanAsync());
         Add(aiMenu, "Agent : annuler la dernière modification", async (_, _) => await RestoreAgentPlanAsync());
@@ -120,10 +122,13 @@ public sealed class Form1 : Form
         extensionsMenu = extensionMenu;
         Add(extensionMenu, "Actualiser les extensions", (_, _) => RefreshExtensions());
         Add(extensionMenu, "Ouvrir le dossier des extensions", (_, _) => OpenExtensionsFolder());
+        var learningMenu = new ToolStripMenuItem("Pédagogie");
+        Add(learningMenu, "Activer/désactiver le mode apprentissage", (_, _) => ToggleLearningMode());
+        Add(learningMenu, "Activer/désactiver le mode examen", (_, _) => ToggleExamMode());
         var helpMenu = new ToolStripMenuItem("Aide");
         Add(helpMenu, "Raccourcis clavier", (_, _) => ShowShortcuts());
         Add(helpMenu, "À propos de KEYCE CODE", (_, _) => ShowAbout());
-        menu.Items.AddRange([fileMenu, editMenu, viewMenu, runMenu, gitMenu, aiMenu, extensionMenu, helpMenu]); MainMenuStrip = menu;
+        menu.Items.AddRange([fileMenu, editMenu, viewMenu, runMenu, gitMenu, aiMenu, extensionMenu, learningMenu, helpMenu]); MainMenuStrip = menu;
 
         var bar = new ToolStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, GripStyle = ToolStripGripStyle.Hidden, Padding = new Padding(6, 3, 6, 3), Height = 34, Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
         toolBar = bar;
@@ -167,6 +172,7 @@ public sealed class Form1 : Form
         tabs.SelectedIndexChanged += (_, _) => { UpdateCursorStatus(Editor()); UpdateAiContext(); };
         NewFile();
         RefreshExtensions();
+        ApplyPedagogicalMode();
     }
 
     private static TabPage CreateWpfTab(string title, System.Windows.Controls.UserControl view)
@@ -452,7 +458,11 @@ public sealed class Form1 : Form
 
     private void SaveCurrent() { if (tabs.SelectedTab is { } page) SavePage(page); }
 
-    private void ApplyEditorSettings(CodeEditorSurface surface) => surface.ApplyAppearance(settings);
+    private void ApplyEditorSettings(CodeEditorSurface surface)
+    {
+        surface.ApplyAppearance(settings);
+        surface.SetExamMode(settings.ExamMode);
+    }
 
     private void AttachEditor(CodeEditorSurface surface)
     {
@@ -508,6 +518,37 @@ public sealed class Form1 : Form
         aiChatView?.ApplyTheme(dark);
         output.BackColor = dark ? Color.FromArgb(20, 22, 27) : Color.White;
         output.ForeColor = dark ? Color.Gainsboro : Color.FromArgb(32, 35, 40);
+    }
+
+    private void ToggleLearningMode()
+    {
+        settings.LearningMode = !settings.LearningMode;
+        if (settings.LearningMode) settings.ExamMode = false;
+        settingsService.Save(settings);
+        ApplyPedagogicalMode();
+        status.Text = settings.LearningMode ? "Mode apprentissage activé." : "Mode apprentissage désactivé.";
+    }
+
+    private void ToggleExamMode()
+    {
+        settings.ExamMode = !settings.ExamMode;
+        if (settings.ExamMode) settings.LearningMode = false;
+        settingsService.Save(settings);
+        ApplyPedagogicalMode();
+        status.Text = settings.ExamMode ? "Mode examen activé : IA et presse-papiers désactivés." : "Mode examen désactivé.";
+    }
+
+    private void ApplyPedagogicalMode()
+    {
+        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
+            surface.SetExamMode(settings.ExamMode);
+        if (aiChatView is not null)
+        {
+            aiChatView.SetExamMode(settings.ExamMode);
+            aiChatView.IsEnabled = !settings.ExamMode;
+        }
+        if (aiMenu is not null)
+            foreach (ToolStripItem item in aiMenu.DropDownItems) item.Enabled = !settings.ExamMode;
     }
 
     private static void ApplyWinFormsColors(Control parent, Color surface, Color text)
@@ -981,6 +1022,9 @@ public sealed class Form1 : Form
                 diagnosticRanges.Add((start, output.TextLength, diagnostic.Line, diagnostic.Column));
             }
 
+            if (settings.LearningMode)
+                output.AppendText("\r\nMode apprentissage : lisez le code d’erreur, localisez la ligne indiquée et essayez une correction avant de demander l’aide de l’IA.\r\n");
+
             status.Text = $"Analyse terminée : {diagnostics.Count} problème(s).";
         }
         catch (Exception ex)
@@ -1090,6 +1134,11 @@ public sealed class Form1 : Form
         {
             if (debuggerService.IsRunning) _ = ContinueDebuggingAsync();
             else _ = RunCurrent();
+            return true;
+        }
+        if (settings.ExamMode && (keyData == (Keys.Control | Keys.C) || keyData == (Keys.Control | Keys.X) || keyData == (Keys.Control | Keys.V)))
+        {
+            status.Text = "Presse-papiers désactivé en mode examen.";
             return true;
         }
         if (keyData == (Keys.Control | Keys.Oemplus) || keyData == (Keys.Control | Keys.Add)) { AdjustEditorFontSize(1); return true; }
