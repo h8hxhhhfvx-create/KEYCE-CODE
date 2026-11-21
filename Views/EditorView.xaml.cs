@@ -8,9 +8,9 @@ namespace KeyceCode.Views;
 
 public partial class EditorView : WpfUserControl
 {
-    private const int IndentSize = 4;
     private readonly SyntaxHighlightingService highlightingService = new();
     private string savedText = string.Empty;
+    private int indentSize = 4;
     private bool suppressChanges;
 
     public EditorView()
@@ -96,6 +96,9 @@ public partial class EditorView : WpfUserControl
         MiniMapScrollViewer.Background = MiniMapBorder.Background;
         MiniMapText.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(minimapForeground));
         Editor.FontSize = Math.Clamp(settings.EditorFontSize, 8, 32);
+        indentSize = Math.Clamp(settings.TabSize, 1, 16);
+        Editor.Options.IndentationSize = indentSize;
+        Editor.Options.ConvertTabsToSpaces = true;
         Editor.WordWrap = settings.WordWrap;
     }
 
@@ -142,9 +145,9 @@ public partial class EditorView : WpfUserControl
         var previousLine = Editor.Document.GetLineByOffset(caretOffset - 1);
         var previousText = Editor.Document.GetText(previousLine.Offset, previousLine.Length);
         var indentation = new string(previousText.TakeWhile(c => c is ' ' or '\t').ToArray());
-        if (previousText.TrimEnd().EndsWith("{", StringComparison.Ordinal)) indentation += new string(' ', IndentSize);
+        if (previousText.TrimEnd().EndsWith("{", StringComparison.Ordinal)) indentation += new string(' ', indentSize);
         if (GetCurrentLineStartsWithClosingBrace(caretOffset))
-            indentation = indentation.Length >= IndentSize ? indentation[..^IndentSize] : string.Empty;
+            indentation = indentation.Length >= indentSize ? indentation[..^indentSize] : string.Empty;
         if (indentation.Length == 0) return;
         Editor.Document.Insert(caretOffset, indentation);
         Editor.CaretOffset = caretOffset + indentation.Length;
