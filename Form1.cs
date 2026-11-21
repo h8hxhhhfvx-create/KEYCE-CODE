@@ -982,9 +982,14 @@ public sealed class Form1 : Form
 
     private void CloseAll()
     {
-        foreach (var page in tabs.TabPages.Cast<TabPage>().ToList())
-        {
+        var pages = tabs.TabPages.Cast<TabPage>().ToList();
+        // Confirmer tous les fichiers avant de retirer le moindre onglet :
+        // une annulation ne doit pas produire une fermeture partielle.
+        foreach (var page in pages)
             if (!CanClose(page)) return;
+
+        foreach (var page in pages)
+        {
             tabs.TabPages.Remove(page);
             page.Dispose();
         }
