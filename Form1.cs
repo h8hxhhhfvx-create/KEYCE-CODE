@@ -530,6 +530,7 @@ public sealed class Form1 : Form
                 .OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault()
                 ?? throw new FileNotFoundException("Assembly compilée introuvable.");
             debuggerService.OutputReceived += DebuggerOutputReceived;
+            debuggerService.SnapshotUpdated += DebuggerSnapshotUpdated;
             await debuggerService.StartAsync(dll, directory, debugBreakpoints);
             status.Text = $"Débogage démarré ({debugBreakpoints.Count} point(s) d’arrêt).";
         }
@@ -546,6 +547,25 @@ public sealed class Form1 : Form
     {
         if (IsDisposed) return;
         BeginInvoke(() => { SelectBottomTab("Sortie"); output.AppendText(text); });
+    }
+
+    private void DebuggerSnapshotUpdated(DebugSnapshot snapshot)
+    {
+        if (IsDisposed) return;
+        BeginInvoke(() =>
+        {
+            SelectBottomTab("Sortie");
+            output.AppendText($"\r\n--- Débogueur : thread {snapshot.ThreadId} arrêté ---\r\n");
+            foreach (var frame in snapshot.Frames)
+                output.AppendText($"{frame.Name} — {frame.FilePath ?? "fichier inconnu"}({frame.Line},{frame.Column})\r\n");
+            if (snapshot.Variables.Count > 0)
+            {
+                output.AppendText("Variables locales :\r\n");
+                foreach (var variable in snapshot.Variables)
+                    output.AppendText($"  {variable.Name} = {variable.Value}{(variable.Type is null ? "" : $" ({variable.Type})")}\r\n");
+            }
+            status.Text = "Programme arrêté sur un point d’arrêt.";
+        });
     }
 
     private void RunProject()

@@ -10,8 +10,12 @@ public sealed class DebuggerService : IAsyncDisposable
     private Process? adapter;
     private StreamWriter? input;
     private int sequence;
+    private readonly SemaphoreSlim writeLock = new(1, 1);
+    private int stoppedThreadId;
+    private readonly List<DebugFrame> currentFrames = new();
 
     public event Action<string>? OutputReceived;
+    public event Action<DebugSnapshot>? SnapshotUpdated;
     public bool IsRunning => adapter is { HasExited: false };
 
     public string? FindAdapter()
@@ -69,8 +73,13 @@ public sealed class DebuggerService : IAsyncDisposable
         if (input is null) throw new InvalidOperationException("Le débogueur n’est pas démarré.");
         var payload = JsonSerializer.Serialize(new { seq = ++sequence, type = "request", command, arguments });
         var bytes = Encoding.UTF8.GetByteCount(payload);
-        await input.WriteAsync($"Content-Length: {bytes}\r\n\r\n{payload}");
-        await input.FlushAsync();
+        await writeLock.WaitAsync();
+        try
+        {
+            await input.WriteAsync($"Content-Length: {bytes}\r\n\r\n{payload}");
+            await input.FlushAsync();
+        }
+        finally { writeLock.Release(); }
     }
 
     private async Task ReadMessagesAsync(StreamReader reader, CancellationToken cancellationToken)
@@ -90,11 +99,67 @@ public sealed class DebuggerService : IAsyncDisposable
                     if (read == 0) break;
                     offset += read;
                 }
-                if (offset > 0) OutputReceived?.Invoke(Encoding.UTF8.GetString(Encoding.UTF8.GetBytes(buffer, 0, offset)) + "\r\n");
+                if (offset > 0)
+                {
+                    var json = new string(buffer, 0, offset);
+                    OutputReceived?.Invoke(json + "\r\n");
+                    await HandleMessageAsync(json);
+                }
             }
         }
         catch (OperationCanceledException) { }
         catch (IOException) { }
+    }
+
+    private async Task HandleMessageAsync(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (root.TryGetProperty("event", out var eventName) && eventName.GetString() == "stopped")
+            {
+                stoppedThreadId = root.GetProperty("body").GetProperty("threadId").GetInt32();
+                await SendAsync("stackTrace", new { threadId = stoppedThreadId, levels = 20 });
+                return;
+            }
+            if (!root.TryGetProperty("type", out var type) || type.GetString() != "response" || !root.TryGetProperty("command", out var command)) return;
+            var commandName = command.GetString();
+            if (commandName == "stackTrace")
+            {
+                currentFrames.Clear();
+                foreach (var frame in root.GetProperty("body").GetProperty("stackFrames").EnumerateArray())
+                {
+                    var source = frame.TryGetProperty("source", out var sourceValue) && sourceValue.TryGetProperty("path", out var path) ? path.GetString() : null;
+                    currentFrames.Add(new DebugFrame(frame.GetProperty("name").GetString() ?? "?", source, frame.GetProperty("line").GetInt32(), frame.GetProperty("column").GetInt32(), frame.GetProperty("id").GetInt32()));
+                }
+                if (currentFrames.Count > 0)
+                    await SendAsync("scopes", new { frameId = currentFrames[0].Id });
+                else SnapshotUpdated?.Invoke(new DebugSnapshot(stoppedThreadId, currentFrames.ToArray(), []));
+                return;
+            }
+            if (commandName == "scopes")
+            {
+                var localScope = root.GetProperty("body").GetProperty("scopes").EnumerateArray()
+                    .FirstOrDefault(scope => string.Equals(scope.GetProperty("name").GetString(), "Locals", StringComparison.OrdinalIgnoreCase));
+                if (localScope.ValueKind != JsonValueKind.Undefined)
+                    await SendAsync("variables", new { variablesReference = localScope.GetProperty("variablesReference").GetInt32() });
+                else SnapshotUpdated?.Invoke(new DebugSnapshot(stoppedThreadId, currentFrames.ToArray(), []));
+                return;
+            }
+            if (commandName == "variables")
+            {
+                var variables = root.GetProperty("body").GetProperty("variables").EnumerateArray()
+                    .Select(variable => new DebugVariable(variable.GetProperty("name").GetString() ?? "?",
+                        variable.TryGetProperty("value", out var value) ? value.GetString() ?? value.ToString() : "",
+                        variable.TryGetProperty("type", out var variableType) ? variableType.GetString() : null))
+                    .ToArray();
+                SnapshotUpdated?.Invoke(new DebugSnapshot(stoppedThreadId, currentFrames.ToArray(), variables));
+            }
+        }
+        catch (JsonException) { }
+        catch (KeyNotFoundException) { }
+        catch (InvalidOperationException) { }
     }
 
     private async Task ReadErrorsAsync(StreamReader reader, CancellationToken cancellationToken)
