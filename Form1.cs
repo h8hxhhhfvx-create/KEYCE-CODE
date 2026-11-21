@@ -74,14 +74,14 @@ public sealed class Form1 : Form
     { var item = new ToolStripMenuItem(label) { ShortcutKeys = shortcut }; item.Click += action; parent.DropDownItems.Add(item); }
     private static void Button(ToolStrip bar, string label, Action action)
     { var item = new ToolStripButton(label); item.Click += (_, _) => action(); bar.Items.Add(item); }
-    private RichTextBox? Editor() => EditorOf(tabs.SelectedTab);
-    private static RichTextBox? EditorOf(TabPage? page) => page?.Controls.OfType<CodeEditorSurface>().FirstOrDefault()?.Editor;
+    private CodeEditorSurface? Editor() => EditorOf(tabs.SelectedTab);
+    private static CodeEditorSurface? EditorOf(TabPage? page) => page?.Controls.OfType<CodeEditorSurface>().FirstOrDefault();
     private string? PathOf(TabPage? page = null) => (page ?? tabs.SelectedTab)?.Tag as string;
 
     private void NewFile()
     {
         var page = new TabPage("Sans titre") { Tag = null, BackColor = Color.FromArgb(30, 33, 40) };
-        var surface = new CodeEditorSurface(); surface.Editor.Modified = false;
+        var surface = new CodeEditorSurface(); surface.Modified = false;
         page.Controls.Add(surface); tabs.TabPages.Add(page); tabs.SelectedTab = page; UpdateTitle(page);
     }
     private void OpenFile()
@@ -96,7 +96,7 @@ public sealed class Form1 : Form
         try
         {
             var page = new TabPage(Path.GetFileName(path)) { Tag = path, BackColor = Color.FromArgb(30, 33, 40) };
-            var surface = new CodeEditorSurface(); page.Controls.Add(surface); surface.Editor.Text = fileService.ReadText(path); surface.Editor.Modified = false;
+            var surface = new CodeEditorSurface(); page.Controls.Add(surface); surface.ApplyLanguage(Path.GetExtension(path)); surface.Text = fileService.ReadText(path); surface.Modified = false;
             tabs.TabPages.Add(page); tabs.SelectedTab = page; UpdateTitle(page); status.Text = path;
         }
         catch (Exception ex) { MessageBox.Show(this, $"Impossible d’ouvrir le fichier.\n{ex.Message}", "KeyceCode", MessageBoxButtons.OK, MessageBoxIcon.Error); }
@@ -126,7 +126,7 @@ public sealed class Form1 : Form
             if (dialog.ShowDialog(this) != DialogResult.OK) return;
             path = dialog.FileName;
         }
-        try { fileService.WriteText(path, editor.Text); page.Tag = Path.GetFullPath(path); editor.Modified = false; page.Controls.OfType<CodeEditorSurface>().FirstOrDefault()?.RefreshColors(); UpdateTitle(page); status.Text = $"Enregistré : {path}"; if (workspace is not null) explorer.RefreshProject(); }
+        try { fileService.WriteText(path, editor.Text); page.Tag = Path.GetFullPath(path); editor.Modified = false; UpdateTitle(page); status.Text = $"Enregistré : {path}"; if (workspace is not null) explorer.RefreshProject(); }
         catch (Exception ex) { MessageBox.Show(this, $"Impossible d’enregistrer.\n{ex.Message}", "KeyceCode", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
     private void UpdateTitle(TabPage page)
@@ -138,9 +138,9 @@ public sealed class Form1 : Form
     }
     private void OnEditorChanged(object? sender, EventArgs e)
     {
-        if (sender is not RichTextBox editor) return;
+        if (sender is not CodeEditorSurface editor) return;
         var page = tabs.TabPages.Cast<TabPage>().FirstOrDefault(t => EditorOf(t) == editor); if (page is null) return;
-        page.Text = (PathOf(page) is { } p ? Path.GetFileName(p) : "Sans titre") + " •";
+        UpdateTitle(page);
     }
 
     private void UpdateOpenPaths(string oldPath, string newPath)
@@ -235,73 +235,5 @@ public sealed class Form1 : Form
         public override Color ImageMarginGradientBegin => Color.FromArgb(30, 33, 40); public override Color ImageMarginGradientMiddle => Color.FromArgb(30, 33, 40);
         public override Color ImageMarginGradientEnd => Color.FromArgb(30, 33, 40); public override Color ToolStripGradientBegin => Color.FromArgb(30, 33, 40);
         public override Color ToolStripGradientMiddle => Color.FromArgb(30, 33, 40); public override Color ToolStripGradientEnd => Color.FromArgb(30, 33, 40);
-    }
-}
-
-internal sealed class CodeEditorSurface : UserControl
-{
-    private readonly Panel gutter = new() { Dock = DockStyle.Left, Width = 48, BackColor = Color.FromArgb(25, 28, 34) };
-    private bool formatting;
-    public LineNumberRichTextBox Editor { get; } = new()
-    {
-        Dock = DockStyle.Fill, AcceptsTab = true, WordWrap = false, DetectUrls = false,
-        BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.FromArgb(220, 220, 220),
-        BorderStyle = BorderStyle.None, Font = new Font("Cascadia Mono", 11), HideSelection = false,
-        SelectionColor = Color.FromArgb(70, 78, 92), ScrollBars = RichTextBoxScrollBars.Both
-    };
-
-    public CodeEditorSurface()
-    {
-        Dock = DockStyle.Fill; Controls.Add(Editor); Controls.Add(gutter);
-        gutter.Paint += PaintLineNumbers;
-        Editor.TextChanged += (_, _) => { gutter.Invalidate(); ApplyCSharpColors(); };
-        Editor.VScroll += (_, _) => gutter.Invalidate(); Editor.Resize += (_, _) => gutter.Invalidate();
-    }
-
-    public void RefreshColors() => ApplyCSharpColors();
-
-    private void PaintLineNumbers(object? sender, PaintEventArgs e)
-    {
-        var first = Math.Max(0, Editor.GetLineFromCharIndex(Editor.GetCharIndexFromPosition(new Point(1, 1))));
-        var count = Editor.GetLineFromCharIndex(Editor.GetCharIndexFromPosition(new Point(1, Editor.ClientSize.Height))) - first + 2;
-        using var brush = new SolidBrush(Color.FromArgb(125, 132, 145));
-        using var font = new Font("Cascadia Mono", 9);
-        for (var line = first; line < first + Math.Max(1, count); line++)
-        {
-            var charIndex = Editor.GetFirstCharIndexFromLine(line); if (charIndex < 0) break;
-            var point = Editor.GetPositionFromCharIndex(charIndex);
-            if (point.Y > Editor.ClientSize.Height) break;
-            e.Graphics.DrawString((line + 1).ToString(), font, brush, 2, point.Y + 1);
-        }
-    }
-
-    private void ApplyCSharpColors()
-    {
-        if (formatting || !string.Equals(Path.GetExtension(Parent?.Parent is TabPage page ? page.Tag as string : null), ".cs", StringComparison.OrdinalIgnoreCase)) return;
-        formatting = true;
-        var selectionStart = Editor.SelectionStart; var selectionLength = Editor.SelectionLength; var modified = Editor.Modified;
-        Editor.SuspendLayout();
-        Editor.SelectAll(); Editor.SelectionColor = Color.FromArgb(220, 220, 220);
-        var text = Editor.Text;
-        ColorMatches(@"//[^\r\n]*|/\*[\s\S]*?\*/", Color.FromArgb(106, 153, 85));
-        ColorMatches("@?\"(?:\"\"|\\\\.|[^\"\\\\])*\"", Color.FromArgb(206, 145, 120));
-        ColorMatches(@"\b(abstract|as|async|await|base|bool|break|byte|case|catch|char|class|const|continue|decimal|default|delegate|do|double|else|enum|event|explicit|extern|false|finally|fixed|float|for|foreach|if|implicit|in|int|interface|internal|is|lock|long|namespace|new|null|object|operator|out|override|params|private|protected|public|readonly|ref|return|sbyte|sealed|short|sizeof|stackalloc|static|string|struct|switch|this|throw|true|try|typeof|uint|ulong|unchecked|unsafe|ushort|using|var|virtual|void|volatile|while|Task|string|Console)\b", Color.FromArgb(86, 156, 214));
-        Editor.Select(Math.Min(selectionStart, Editor.TextLength), Math.Min(selectionLength, Math.Max(0, Editor.TextLength - selectionStart)));
-        Editor.Modified = modified; Editor.ResumeLayout(); formatting = false;
-
-        void ColorMatches(string pattern, Color color)
-        {
-            foreach (Match match in Regex.Matches(text, pattern)) { Editor.Select(match.Index, match.Length); Editor.SelectionColor = color; }
-        }
-    }
-}
-
-internal sealed class LineNumberRichTextBox : RichTextBox
-{
-    protected override void WndProc(ref Message m)
-    {
-        base.WndProc(ref m);
-        if (m.Msg is 0x0115 or 0x020A or 0x0100 or 0x0101)
-            Parent?.Controls.OfType<Panel>().FirstOrDefault()?.Invalidate();
     }
 }
