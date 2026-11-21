@@ -54,10 +54,7 @@ public sealed class Form1 : Form
         var bar = new ToolStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, GripStyle = ToolStripGripStyle.Hidden, Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
         Button(bar, "＋ Nouveau", () => NewFile()); Button(bar, "Ouvrir", OpenFile); Button(bar, "Projet C#", OpenProject); Button(bar, "Dossier", OpenWorkspace); Button(bar, "Enregistrer", SaveCurrent);
         bar.Items.Add(new ToolStripSeparator()); Button(bar, "▶ Exécuter (F5)", async () => await RunCurrent());
-        Button(bar, "🔍 Analyser", () =>
-{
-    AnalyzeCurrent();
-});
+        Button(bar, "🔍 Analyser", AnalyzeCurrent);
 
         var split = new SplitContainer { Size = new Size(1200, 700), Dock = DockStyle.Fill, SplitterDistance = 260, BackColor = Color.FromArgb(37, 40, 48), Panel1MinSize = 180, Panel2MinSize = 400 };
         split.Panel1.Controls.Add(explorer);
@@ -81,14 +78,14 @@ public sealed class Form1 : Form
     { var item = new ToolStripMenuItem(label) { ShortcutKeys = shortcut }; item.Click += action; parent.DropDownItems.Add(item); }
     private static void Button(ToolStrip bar, string label, Action action)
     { var item = new ToolStripButton(label); item.Click += (_, _) => action(); bar.Items.Add(item); }
-    private RichTextBox? Editor() => EditorOf(tabs.SelectedTab);
-    private static RichTextBox? EditorOf(TabPage? page) => page?.Controls.OfType<CodeEditorSurface>().FirstOrDefault()?.Editor;
+    private CodeEditorSurface? Editor() => EditorOf(tabs.SelectedTab);
+    private static CodeEditorSurface? EditorOf(TabPage? page) => page?.Controls.OfType<CodeEditorSurface>().FirstOrDefault();
     private string? PathOf(TabPage? page = null) => (page ?? tabs.SelectedTab)?.Tag as string;
 
     private void NewFile()
     {
         var page = new TabPage("Sans titre") { Tag = null, BackColor = Color.FromArgb(30, 33, 40) };
-        var surface = new CodeEditorSurface(); surface.Editor.Modified = false;
+        var surface = new CodeEditorSurface(); surface.Modified = false;
         page.Controls.Add(surface); tabs.TabPages.Add(page); tabs.SelectedTab = page; UpdateTitle(page);
     }
     private void OpenFile()
@@ -103,7 +100,7 @@ public sealed class Form1 : Form
         try
         {
             var page = new TabPage(Path.GetFileName(path)) { Tag = path, BackColor = Color.FromArgb(30, 33, 40) };
-            var surface = new CodeEditorSurface(); page.Controls.Add(surface); surface.Editor.Text = fileService.ReadText(path); surface.Editor.Modified = false;
+            var surface = new CodeEditorSurface(); page.Controls.Add(surface); surface.ApplyLanguage(Path.GetExtension(path)); surface.Text = fileService.ReadText(path); surface.Modified = false;
             tabs.TabPages.Add(page); tabs.SelectedTab = page; UpdateTitle(page); status.Text = path;
         }
         catch (Exception ex) { MessageBox.Show(this, $"Impossible d’ouvrir le fichier.\n{ex.Message}", "KeyceCode", MessageBoxButtons.OK, MessageBoxIcon.Error); }
@@ -133,7 +130,7 @@ public sealed class Form1 : Form
             if (dialog.ShowDialog(this) != DialogResult.OK) return;
             path = dialog.FileName;
         }
-        try { fileService.WriteText(path, editor.Text); page.Tag = Path.GetFullPath(path); editor.Modified = false; page.Controls.OfType<CodeEditorSurface>().FirstOrDefault()?.RefreshColors(); UpdateTitle(page); status.Text = $"Enregistré : {path}"; if (workspace is not null) explorer.RefreshProject(); }
+        try { fileService.WriteText(path, editor.Text); page.Tag = Path.GetFullPath(path); editor.Modified = false; UpdateTitle(page); status.Text = $"Enregistré : {path}"; if (workspace is not null) explorer.RefreshProject(); }
         catch (Exception ex) { MessageBox.Show(this, $"Impossible d’enregistrer.\n{ex.Message}", "KeyceCode", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
     private void UpdateTitle(TabPage page)
@@ -145,9 +142,9 @@ public sealed class Form1 : Form
     }
     private void OnEditorChanged(object? sender, EventArgs e)
     {
-        if (sender is not RichTextBox editor) return;
+        if (sender is not CodeEditorSurface editor) return;
         var page = tabs.TabPages.Cast<TabPage>().FirstOrDefault(t => EditorOf(t) == editor); if (page is null) return;
-        page.Text = (PathOf(page) is { } p ? Path.GetFileName(p) : "Sans titre") + " •";
+        UpdateTitle(page);
     }
 
     private void UpdateOpenPaths(string oldPath, string newPath)
@@ -200,115 +197,68 @@ public sealed class Form1 : Form
         if (index >= 0) { editor.Select(index, term.Length); editor.Focus(); } else status.Text = "Aucun résultat";
     }
 
-private void AnalyzeCurrent()
-{
-    // Récupérer l'éditeur actif
-    var editor = Editor();
-
-    if (editor is null)
+    private void AnalyzeCurrent()
     {
-        MessageBox.Show("Aucun éditeur ouvert.");
-        return;
-    }
+        var editor = Editor();
+        if (editor is null) return;
 
-    try
-    {
-        // Analyser le code écrit
-        var diagnostics = codeAnalysisService.Analyze(editor.Text);
-
-        // Effacer les anciens résultats et leurs positions
-        output.Clear();
-        diagnosticRanges.Clear();
-
-        // Vérifier si des problèmes ont été trouvés
-        if (diagnostics.Count == 0)
+        try
         {
-            output.Text = "Aucune erreur ni aucun avertissement détecté.";
-            status.Text = "Analyse terminée.";
-            return;
-        }
+            var diagnostics = codeAnalysisService.Analyze(editor.Text);
+            output.Clear();
+            diagnosticRanges.Clear();
 
-        // Afficher chaque erreur et mémoriser sa position dans la sortie
-        foreach (var diagnostic in diagnostics)
+            if (diagnostics.Count == 0)
+            {
+                output.Text = "Aucune erreur ni aucun avertissement détecté.";
+                status.Text = "Analyse terminée.";
+                return;
+            }
+
+            foreach (var diagnostic in diagnostics)
+            {
+                var start = output.TextLength;
+                output.AppendText($"{diagnostic.Severity} | {diagnostic.Code} | Ligne {diagnostic.Line}, Colonne {diagnostic.Column}\r\n{diagnostic.Message}\r\n\r\n");
+                diagnosticRanges.Add((start, output.TextLength, diagnostic.Line, diagnostic.Column));
+            }
+
+            status.Text = $"Analyse terminée : {diagnostics.Count} problème(s).";
+        }
+        catch (Exception ex)
         {
-            int start = output.TextLength;
-
-            string message =
-                $"{diagnostic.Severity} | {diagnostic.Code} | " +
-                $"Ligne {diagnostic.Line}, Colonne {diagnostic.Column}\r\n" +
-                $"{diagnostic.Message}\r\n\r\n";
-
-            output.AppendText(message);
-
-            diagnosticRanges.Add((
-                start,
-                output.TextLength,
-                diagnostic.Line,
-                diagnostic.Column
-            ));
+            MessageBox.Show(this, ex.Message, "Erreur d'analyse", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
-
-        status.Text = $"Analyse terminée : {diagnostics.Count} problème(s).";
     }
-    catch (Exception ex)
-    {
-        MessageBox.Show(
-            this,
-            ex.Message,
-            "Erreur d'analyse",
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Error
-        );
-    }
-}
 
-
-    // Naviguer vers le code correspondant lorsqu'on double-clique sur un diagnostic.
     private void Output_MouseDoubleClick(object? sender, MouseEventArgs e)
     {
-        int index = output.GetCharIndexFromPosition(e.Location);
-
-        var diagnostic = diagnosticRanges.FirstOrDefault(
-            d => index >= d.Start && index < d.End
-        );
-
-        // Les numéros de ligne commencent à 1 : 0 indique qu'aucun diagnostic n'a été trouvé.
-        if (diagnostic.Line == 0)
-            return;
+        var index = output.GetCharIndexFromPosition(e.Location);
+        var diagnostic = diagnosticRanges.FirstOrDefault(d => index >= d.Start && index < d.End);
+        if (diagnostic.Line == 0) return;
 
         var editor = Editor();
-        if (editor is null || editor.Lines.Length == 0)
-            return;
+        if (editor is null) return;
 
-        int lineIndex = Math.Clamp(
-            diagnostic.Line - 1,
-            0,
-            editor.Lines.Length - 1
-        );
-
-        int lineStart = editor.GetFirstCharIndexFromLine(lineIndex);
-        if (lineStart < 0)
-            return;
-
-        int position = Math.Min(
-            lineStart + diagnostic.Column - 1,
-            editor.TextLength
-        );
-
-        // Surligner la ligne qui contient le diagnostic.
-        var surface = tabs.SelectedTab?.Controls.OfType<CodeEditorSurface>().FirstOrDefault();
-        surface?.HighlightLine(diagnostic.Line);
-
-        editor.SelectionStart = position;
-        editor.SelectionLength = 0;
-        editor.ScrollToCaret();
+        var position = GetLineStartOffset(editor.Text, diagnostic.Line) + Math.Max(0, diagnostic.Column - 1);
+        editor.Select(Math.Min(position, editor.Text.Length), 0);
         editor.Focus();
+        status.Text = $"Erreur sélectionnée : ligne {diagnostic.Line}, colonne {diagnostic.Column}";
+    }
 
-        status.Text = $"Erreur surlignée : ligne {diagnostic.Line}, colonne {diagnostic.Column}";
+    private static int GetLineStartOffset(string text, int lineNumber)
+    {
+        if (lineNumber <= 1) return 0;
+        var currentLine = 1;
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (text[i] != '\n') continue;
+            currentLine++;
+            if (currentLine == lineNumber) return i + 1;
+        }
+        return text.Length;
     }
 
     private async Task RunCurrent()
-    
     {
         var editor = Editor(); if (editor is null) return;
         if (PathOf() is null) { SaveCurrent(); if (PathOf() is null) return; }
@@ -351,121 +301,5 @@ private void AnalyzeCurrent()
         public override Color ImageMarginGradientBegin => Color.FromArgb(30, 33, 40); public override Color ImageMarginGradientMiddle => Color.FromArgb(30, 33, 40);
         public override Color ImageMarginGradientEnd => Color.FromArgb(30, 33, 40); public override Color ToolStripGradientBegin => Color.FromArgb(30, 33, 40);
         public override Color ToolStripGradientMiddle => Color.FromArgb(30, 33, 40); public override Color ToolStripGradientEnd => Color.FromArgb(30, 33, 40);
-    }
-}
-
-internal sealed class CodeEditorSurface : UserControl
-{
-    private readonly Panel gutter = new() { Dock = DockStyle.Left, Width = 48, BackColor = Color.FromArgb(25, 28, 34) };
-    private bool formatting;
-    public LineNumberRichTextBox Editor { get; } = new()
-    {
-        Dock = DockStyle.Fill, AcceptsTab = true, WordWrap = false, DetectUrls = false,
-        BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.FromArgb(220, 220, 220),
-        BorderStyle = BorderStyle.None, Font = new Font("Cascadia Mono", 11), HideSelection = false,
-        SelectionColor = Color.FromArgb(70, 78, 92), ScrollBars = RichTextBoxScrollBars.Both
-    };
-
-    public CodeEditorSurface()
-    {
-        Dock = DockStyle.Fill; Controls.Add(Editor); Controls.Add(gutter);
-        gutter.Paint += PaintLineNumbers;
-        Editor.TextChanged += (_, _) => { gutter.Invalidate(); ApplyCSharpColors(); };
-        Editor.VScroll += (_, _) => gutter.Invalidate(); Editor.Resize += (_, _) => gutter.Invalidate();
-    }
-
-    public void RefreshColors() => ApplyCSharpColors();
-
-    // Surligne une ligne sans modifier le texte ni les couleurs du code.
-    public void HighlightLine(int lineNumber)
-    {
-        if (lineNumber < 1 || lineNumber > Editor.Lines.Length)
-            return;
-
-        int oldSelectionStart = Editor.SelectionStart;
-        int oldSelectionLength = Editor.SelectionLength;
-        bool wasModified = Editor.Modified;
-
-        Color normalBackground = Color.FromArgb(30, 33, 40);
-        Color highlightBackground = Color.FromArgb(75, 85, 105);
-
-        Editor.SuspendLayout();
-
-        // Effacer l'ancien surlignage.
-        Editor.SelectAll();
-        Editor.SelectionBackColor = normalBackground;
-
-        int lineIndex = lineNumber - 1;
-        int lineStart = Editor.GetFirstCharIndexFromLine(lineIndex);
-
-        if (lineStart >= 0)
-        {
-            int lineLength = Editor.Lines[lineIndex].Length;
-            if (lineLength == 0 && lineStart < Editor.TextLength)
-                lineLength = 1;
-
-            lineLength = Math.Min(lineLength, Editor.TextLength - lineStart);
-
-            if (lineLength > 0)
-            {
-                Editor.Select(lineStart, lineLength);
-                Editor.SelectionBackColor = highlightBackground;
-            }
-        }
-
-        // Restaurer la sélection de l'utilisateur et l'état du document.
-        Editor.Select(
-            Math.Min(oldSelectionStart, Editor.TextLength),
-            Math.Min(oldSelectionLength, Math.Max(0, Editor.TextLength - oldSelectionStart))
-        );
-        Editor.SelectionBackColor = normalBackground;
-        Editor.Modified = wasModified;
-        Editor.ResumeLayout();
-        Editor.Invalidate();
-    }
-
-    private void PaintLineNumbers(object? sender, PaintEventArgs e)
-    {
-        var first = Math.Max(0, Editor.GetLineFromCharIndex(Editor.GetCharIndexFromPosition(new Point(1, 1))));
-        var count = Editor.GetLineFromCharIndex(Editor.GetCharIndexFromPosition(new Point(1, Editor.ClientSize.Height))) - first + 2;
-        using var brush = new SolidBrush(Color.FromArgb(125, 132, 145));
-        using var font = new Font("Cascadia Mono", 9);
-        for (var line = first; line < first + Math.Max(1, count); line++)
-        {
-            var charIndex = Editor.GetFirstCharIndexFromLine(line); if (charIndex < 0) break;
-            var point = Editor.GetPositionFromCharIndex(charIndex);
-            if (point.Y > Editor.ClientSize.Height) break;
-            e.Graphics.DrawString((line + 1).ToString(), font, brush, 2, point.Y + 1);
-        }
-    }
-
-    private void ApplyCSharpColors()
-    {
-        if (formatting || !string.Equals(Path.GetExtension(Parent?.Parent is TabPage page ? page.Tag as string : null), ".cs", StringComparison.OrdinalIgnoreCase)) return;
-        formatting = true;
-        var selectionStart = Editor.SelectionStart; var selectionLength = Editor.SelectionLength; var modified = Editor.Modified;
-        Editor.SuspendLayout();
-        Editor.SelectAll(); Editor.SelectionColor = Color.FromArgb(220, 220, 220);
-        var text = Editor.Text;
-        ColorMatches(@"//[^\r\n]*|/\*[\s\S]*?\*/", Color.FromArgb(106, 153, 85));
-        ColorMatches("@?\"(?:\"\"|\\\\.|[^\"\\\\])*\"", Color.FromArgb(206, 145, 120));
-        ColorMatches(@"\b(abstract|as|async|await|base|bool|break|byte|case|catch|char|class|const|continue|decimal|default|delegate|do|double|else|enum|event|explicit|extern|false|finally|fixed|float|for|foreach|if|implicit|in|int|interface|internal|is|lock|long|namespace|new|null|object|operator|out|override|params|private|protected|public|readonly|ref|return|sbyte|sealed|short|sizeof|stackalloc|static|string|struct|switch|this|throw|true|try|typeof|uint|ulong|unchecked|unsafe|ushort|using|var|virtual|void|volatile|while|Task|string|Console)\b", Color.FromArgb(86, 156, 214));
-        Editor.Select(Math.Min(selectionStart, Editor.TextLength), Math.Min(selectionLength, Math.Max(0, Editor.TextLength - selectionStart)));
-        Editor.Modified = modified; Editor.ResumeLayout(); formatting = false;
-
-        void ColorMatches(string pattern, Color color)
-        {
-            foreach (Match match in Regex.Matches(text, pattern)) { Editor.Select(match.Index, match.Length); Editor.SelectionColor = color; }
-        }
-    }
-}
-
-internal sealed class LineNumberRichTextBox : RichTextBox
-{
-    protected override void WndProc(ref Message m)
-    {
-        base.WndProc(ref m);
-        if (m.Msg is 0x0115 or 0x020A or 0x0100 or 0x0101)
-            Parent?.Controls.OfType<Panel>().FirstOrDefault()?.Invalidate();
     }
 }

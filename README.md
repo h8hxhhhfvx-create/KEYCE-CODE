@@ -32,4 +32,28 @@ dotnet run --project KeyceCode.csproj
 - `ViewModels/` : état et actions du projet courant
 - `Views/ExplorerView.cs` : explorateur de projet Windows Forms
 
+## Éditeur de code
+
+La zone d’édition utilise AvalonEdit, hébergé dans Windows Forms grâce à
+l’interopérabilité WPF. Cela permet de conserver la fenêtre actuelle du projet
+tout en disposant d’un vrai moteur d’édition WPF extensible.
+
+La partie éditeur comprend :
+
+- coloration syntaxique C# ;
+- numéros de lignes ;
+- onglets et indicateur de modification ;
+- annuler et rétablir ;
+- indentation automatique ;
+- fermeture automatique des parenthèses, crochets, accolades et guillemets ;
+- mini-carte de navigation à droite de l’éditeur ;
+- modèles `EditorTab` et `EditorViewModel` prêts pour les futurs services.
+
+Les tests de gestion des onglets se trouvent dans `KeyceCode.Tests` et se
+lancent avec :
+
+```bash
+dotnet test KeyceCode.Tests/KeyceCode.Tests.csproj
+```
+
 Le cahier des charges impose Windows Forms ; l’explorateur est donc un contrôle C# et non une vue WPF/XAML.
