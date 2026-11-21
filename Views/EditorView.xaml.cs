@@ -1,5 +1,7 @@
 using System.Windows;
+using ICSharpCode.AvalonEdit.CodeCompletion;
 using ICSharpCode.AvalonEdit.Document;
+using ICSharpCode.AvalonEdit.Editing;
 using KeyceCode.Models;
 using KeyceCode.Services;
 using WpfUserControl = System.Windows.Controls.UserControl;
@@ -9,6 +11,8 @@ namespace KeyceCode.Views;
 public partial class EditorView : WpfUserControl
 {
     private readonly SyntaxHighlightingService highlightingService = new();
+    private readonly AutoCompleteService autoCompleteService = new();
+    private CompletionWindow? completionWindow;
     private string savedText = string.Empty;
     private int indentSize = 4;
     private bool suppressChanges;
@@ -19,6 +23,7 @@ public partial class EditorView : WpfUserControl
         highlightingService.Apply(Editor);
         Editor.TextArea.TextEntering += OnTextEntering;
         Editor.TextArea.TextEntered += OnTextEntered;
+        Editor.TextArea.KeyDown += OnEditorKeyDown;
         Editor.TextArea.Caret.PositionChanged += (_, _) => CaretPositionChanged?.Invoke(this, EventArgs.Empty);
         Editor.TextChanged += OnTextChanged;
         UpdateMiniMap();
@@ -156,6 +161,11 @@ public partial class EditorView : WpfUserControl
 
     private void OnTextEntered(object? sender, System.Windows.Input.TextCompositionEventArgs e)
     {
+        if (e.Text is not "\n" && (char.IsLetterOrDigit(e.Text.FirstOrDefault()) || e.Text == "."))
+        {
+            ShowCompletion();
+            return;
+        }
         if (e.Text != "\n") return;
         var caretOffset = Editor.CaretOffset;
         if (caretOffset == 0) return;
@@ -168,6 +178,28 @@ public partial class EditorView : WpfUserControl
         if (indentation.Length == 0) return;
         Editor.Document.Insert(caretOffset, indentation);
         Editor.CaretOffset = caretOffset + indentation.Length;
+    }
+
+    private void ShowCompletion()
+    {
+        completionWindow?.Close();
+        var suggestions = autoCompleteService.GetSuggestions(Editor.Text, Editor.CaretOffset);
+        if (suggestions.Count == 0) return;
+        completionWindow = new CompletionWindow(Editor.TextArea);
+        foreach (var suggestion in suggestions)
+            completionWindow.CompletionList.CompletionData.Add(new EditorCompletionData(suggestion));
+        completionWindow.Closed += (_, _) => completionWindow = null;
+        completionWindow.Show();
+    }
+
+    private void OnEditorKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Space &&
+            System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Control))
+        {
+            ShowCompletion();
+            e.Handled = true;
+        }
     }
 
     private bool GetCurrentLineStartsWithClosingBrace(int offset)
@@ -188,4 +220,18 @@ public partial class EditorView : WpfUserControl
         '\'' => '\'',
         _ => null
     };
+
+    private sealed class EditorCompletionData(string text) : ICompletionData
+    {
+        public System.Windows.Media.ImageSource? Image => null;
+        public string Text { get; } = text;
+        public object Content => Text;
+        public object Description => "Suggestion C#";
+        public double Priority => 0;
+
+        public void Complete(TextArea textArea, ISegment completionSegment, EventArgs insertionRequestEventArgs)
+        {
+            textArea.Document.Replace(completionSegment, Text);
+        }
+    }
 }
