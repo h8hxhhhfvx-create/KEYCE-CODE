@@ -95,6 +95,10 @@ public sealed class Form1 : Form
         Add(runMenu, "Ajouter/retirer un point d’arrêt", (_, _) => ToggleBreakpoint(), Keys.F9);
         Add(runMenu, "Démarrer le débogage", async (_, _) => await StartDebuggingAsync(), Keys.F5 | Keys.Shift);
         Add(runMenu, "Arrêter le débogage", async (_, _) => await StopDebuggingAsync());
+        Add(runMenu, "Continuer le débogage", async (_, _) => await ContinueDebuggingAsync(), Keys.F5);
+        Add(runMenu, "Pas à pas principal", async (_, _) => await StepDebuggingAsync("over"), Keys.F10);
+        Add(runMenu, "Entrer dans la fonction", async (_, _) => await StepDebuggingAsync("into"), Keys.F11);
+        Add(runMenu, "Sortir de la fonction", async (_, _) => await StepDebuggingAsync("out"), Keys.Shift | Keys.F11);
         var gitMenu = new ToolStripMenuItem("Git");
         Add(gitMenu, "Actualiser l’état", async (_, _) => await RefreshGitStatusAsync());
         Add(gitMenu, "Créer un commit…", async (_, _) => await CommitChangesAsync());
@@ -541,6 +545,24 @@ public sealed class Form1 : Form
     {
         await debuggerService.StopAsync();
         status.Text = "Débogage arrêté.";
+    }
+
+    private async Task ContinueDebuggingAsync()
+    {
+        try { await debuggerService.ContinueAsync(); status.Text = "Débogage poursuivi."; }
+        catch (Exception ex) { status.Text = ex.Message; }
+    }
+
+    private async Task StepDebuggingAsync(string mode)
+    {
+        try
+        {
+            if (mode == "into") await debuggerService.StepIntoAsync();
+            else if (mode == "out") await debuggerService.StepOutAsync();
+            else await debuggerService.StepOverAsync();
+            status.Text = "Pas à pas demandé.";
+        }
+        catch (Exception ex) { status.Text = ex.Message; }
     }
 
     private void DebuggerOutputReceived(string text)

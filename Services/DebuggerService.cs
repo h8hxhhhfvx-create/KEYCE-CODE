@@ -68,6 +68,11 @@ public sealed class DebuggerService : IAsyncDisposable
         try { adapter?.Kill(entireProcessTree: true); } catch { }
     }
 
+    public Task ContinueAsync() => SendAsync("continue", new { threadId = stoppedThreadId });
+    public Task StepOverAsync() => SendAsync("next", new { threadId = stoppedThreadId, granularity = "line" });
+    public Task StepIntoAsync() => SendAsync("stepIn", new { threadId = stoppedThreadId, granularity = "line" });
+    public Task StepOutAsync() => SendAsync("stepOut", new { threadId = stoppedThreadId, granularity = "line" });
+
     private async Task SendAsync(string command, object arguments)
     {
         if (input is null) throw new InvalidOperationException("Le débogueur n’est pas démarré.");
