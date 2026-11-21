@@ -10,16 +10,19 @@ public sealed class SyntaxHighlightingService
 {
     public void Apply(TextEditor editor, string? extension = ".cs")
     {
-        if (!string.Equals(extension, ".cs", StringComparison.OrdinalIgnoreCase))
-        {
-            editor.SyntaxHighlighting = null;
-            return;
-        }
-
-        var builtIn = HighlightingManager.Instance.GetDefinition("C#");
+        var normalizedExtension = extension?.Trim().ToLowerInvariant();
+        var builtIn = string.Equals(normalizedExtension, ".cs", StringComparison.OrdinalIgnoreCase)
+            ? HighlightingManager.Instance.GetDefinition("C#")
+            : HighlightingManager.Instance.GetDefinitionByExtension(normalizedExtension ?? string.Empty);
         if (builtIn is not null)
         {
             editor.SyntaxHighlighting = builtIn;
+            return;
+        }
+
+        if (!string.Equals(normalizedExtension, ".cs", StringComparison.OrdinalIgnoreCase))
+        {
+            editor.SyntaxHighlighting = null;
             return;
         }
 
