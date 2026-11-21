@@ -39,7 +39,7 @@ public sealed class Form1 : Form
 
     private void BuildLayout()
     {
-        var menu = new MenuStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
+        var menu = new MenuStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, Font = new Font("Segoe UI", 9F), Padding = new Padding(6, 3, 6, 3), Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
         var fileMenu = new ToolStripMenuItem("Fichier");
         Add(fileMenu, "Nouveau", (_, _) => NewFile(), Keys.Control | Keys.N);
         Add(fileMenu, "Ouvrir…", (_, _) => OpenFile(), Keys.Control | Keys.O);
@@ -67,7 +67,7 @@ public sealed class Form1 : Form
         var runMenu = new ToolStripMenuItem("Exécuter"); Add(runMenu, "Lancer le fichier", async (_, _) => await RunCurrent(), Keys.F5);
         menu.Items.AddRange([fileMenu, editMenu, viewMenu, runMenu]); MainMenuStrip = menu;
 
-        var bar = new ToolStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, GripStyle = ToolStripGripStyle.Hidden, Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
+        var bar = new ToolStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, GripStyle = ToolStripGripStyle.Hidden, Padding = new Padding(6, 3, 6, 3), Height = 34, Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
         Button(bar, "＋ Nouveau", () => NewFile()); Button(bar, "Ouvrir", OpenFile); Button(bar, "Projet C#", OpenProject); Button(bar, "Dossier", OpenWorkspace); Button(bar, "Enregistrer", SaveCurrent);
         bar.Items.Add(new ToolStripSeparator()); Button(bar, "▶ Exécuter (F5)", async () => await RunCurrent());
         Button(bar, "🔨 Compiler", CompileProject); Button(bar, "▶ Projet", RunProject);
@@ -94,7 +94,7 @@ public sealed class Form1 : Form
         bottomTabs.TabPages.Add(CreateWpfTab("Compilation", new OutputView { DataContext = outputViewModel }));
         bottomTabs.TabPages.Add(CreateWpfTab("Terminal", new TerminalView { DataContext = terminalViewModel }));
         editorOutput.Panel2.Controls.Add(bottomTabs); split.Panel2.Controls.Add(editorOutput);
-        var strip = new StatusStrip { BackColor = Color.FromArgb(0, 104, 156), ForeColor = Color.White }; strip.Items.Add(status);
+        var strip = new StatusStrip { BackColor = Color.FromArgb(0, 104, 156), ForeColor = Color.White, Font = new Font("Segoe UI", 9F) }; strip.Items.Add(status);
         Controls.Add(split); Controls.Add(bar); Controls.Add(menu); Controls.Add(strip);
         bar.Dock = DockStyle.Top; menu.Dock = DockStyle.Top; strip.Dock = DockStyle.Bottom;
         NewFile();
@@ -118,7 +118,18 @@ public sealed class Form1 : Form
     private static void Add(ToolStripMenuItem parent, string label, EventHandler action, Keys shortcut = Keys.None)
     { var item = new ToolStripMenuItem(label) { ShortcutKeys = shortcut }; item.Click += action; parent.DropDownItems.Add(item); }
     private static void Button(ToolStrip bar, string label, Action action)
-    { var item = new ToolStripButton(label); item.Click += (_, _) => action(); bar.Items.Add(item); }
+    {
+        var item = new ToolStripButton(label)
+        {
+            AutoSize = false,
+            Height = 27,
+            Padding = new Padding(8, 0, 8, 0),
+            Margin = new Padding(1, 0, 1, 0),
+            DisplayStyle = ToolStripItemDisplayStyle.Text
+        };
+        item.Click += (_, _) => action();
+        bar.Items.Add(item);
+    }
     private CodeEditorSurface? Editor() => EditorOf(tabs.SelectedTab);
     private static CodeEditorSurface? EditorOf(TabPage? page) => page?.Controls.OfType<CodeEditorSurface>().FirstOrDefault();
     private string? PathOf(TabPage? page = null) => (page ?? tabs.SelectedTab)?.Tag as string;

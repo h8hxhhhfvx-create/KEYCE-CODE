@@ -6,7 +6,7 @@
     <Grid Background="#1E2128">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="120" />
+            <ColumnDefinition Width="96" />
         </Grid.ColumnDefinitions>
         <avalonedit:TextEditor x:Name="Editor"
                                Grid.Column="0"
@@ -28,7 +28,7 @@
                           Background="#181A20"
                           MouseDown="OnMiniMapMouseDown">
                 <TextBlock x:Name="MiniMapText"
-                           Margin="5,6"
+                           Margin="4,6"
                            Foreground="#737B8C"
                            FontFamily="Cascadia Mono"
                            FontSize="4"
