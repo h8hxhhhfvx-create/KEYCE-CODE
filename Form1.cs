@@ -112,7 +112,9 @@ public sealed class Form1 : Form
         Add(runMenu, "Arrêter le débogage", async (_, _) => await StopDebuggingAsync());
         Add(runMenu, "Arrêter le fichier en cours", (_, _) => StopCurrentRun());
         Add(runMenu, "Envoyer une saisie au fichier…", (_, _) => SendScriptInput());
-        Add(runMenu, "Continuer le débogage", async (_, _) => await ContinueDebuggingAsync(), Keys.F5);
+        // F5 est routé par ProcessCmdKey : il lance le fichier hors débogage
+        // et continue l’exécution lorsqu’un débogage est déjà actif.
+        Add(runMenu, "Continuer le débogage", async (_, _) => await ContinueDebuggingAsync());
         Add(runMenu, "Pas à pas principal", async (_, _) => await StepDebuggingAsync("over"), Keys.F10);
         Add(runMenu, "Entrer dans la fonction", async (_, _) => await StepDebuggingAsync("into"), Keys.F11);
         Add(runMenu, "Sortir de la fonction", async (_, _) => await StepDebuggingAsync("out"), Keys.Shift | Keys.F11);
@@ -606,7 +608,7 @@ public sealed class Form1 : Form
     private void ShowShortcuts()
     {
         MessageBox.Show(this,
-            "Ctrl+N  Nouveau fichier\nCtrl+O  Ouvrir\nCtrl+S  Enregistrer\nCtrl+Maj+S  Enregistrer sous\nCtrl+W  Fermer l’onglet\nCtrl+Z  Annuler\nCtrl+Y  Rétablir\nCtrl+F  Rechercher\nCtrl+H  Remplacer\nCtrl+G  Aller à la ligne\nCtrl+Maj+I  Formater le document\nCtrl++ / Ctrl+-  Zoomer\nCtrl+0  Taille normale\nCtrl+Maj+F  Rechercher dans les fichiers\nCtrl+Espace  Auto-complétion C#\nF5  Exécuter",
+            "Ctrl+N  Nouveau fichier\nCtrl+O  Ouvrir\nCtrl+S  Enregistrer\nCtrl+Maj+S  Enregistrer sous\nCtrl+W  Fermer l’onglet\nCtrl+Z  Annuler\nCtrl+Y  Rétablir\nCtrl+F  Rechercher\nCtrl+H  Remplacer\nCtrl+G  Aller à la ligne\nCtrl+Maj+O  Aller au symbole\nF2  Renommer le symbole\nF12  Aller à la définition\nCtrl+Maj+I  Formater le document\nCtrl+Maj+F  Rechercher dans les fichiers\nCtrl+Maj+H  Remplacer dans les fichiers\nCtrl+Espace  Auto-complétion C#\nCtrl+Maj+P  Palette de commandes\nCtrl++ / Ctrl+-  Zoomer\nCtrl+0  Taille normale\nF5  Exécuter ou continuer le débogage\nMaj+F5  Démarrer le débogage\nF9  Point d’arrêt\nF10  Pas à pas principal\nF11  Entrer dans la fonction\nMaj+F11  Sortir de la fonction",
             "Raccourcis clavier — KEYCE CODE",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
