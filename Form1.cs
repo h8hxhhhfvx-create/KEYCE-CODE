@@ -88,6 +88,7 @@ public sealed class Form1 : Form
         Add(editMenu, "Aller à la ligne…", (_, _) => GoToLine(), Keys.Control | Keys.G);
         Add(editMenu, "Aller au symbole…", (_, _) => GoToSymbol(), Keys.Control | Keys.Shift | Keys.O);
         Add(editMenu, "Renommer le symbole…", (_, _) => RenameSymbol(), Keys.F2);
+        Add(editMenu, "Aller à la définition", (_, _) => GoToDefinition(), Keys.F12);
         Add(editMenu, "Formater le document", (_, _) => FormatCurrent(), Keys.Control | Keys.Shift | Keys.I);
         Add(editMenu, "Rechercher dans les fichiers…", (_, _) => SearchInFiles(), Keys.Control | Keys.Shift | Keys.F);
         Add(editMenu, "Remplacer dans les fichiers…", (_, _) => ReplaceInFiles(), Keys.Control | Keys.Shift | Keys.H);
@@ -412,6 +413,7 @@ public sealed class Form1 : Form
             ("Édition : Aller à la ligne", GoToLine),
             ("Édition : Aller au symbole", GoToSymbol),
             ("Édition : Renommer le symbole", RenameSymbol),
+            ("Édition : Aller à la définition", GoToDefinition),
             ("Édition : Formater le document", FormatCurrent),
             ("Projet : Compiler", CompileProject),
             ("Projet : Exécuter", RunProject),
@@ -965,6 +967,23 @@ public sealed class Form1 : Form
             status.Text = result.Occurrences == 0 ? "Le symbole porte déjà ce nom." : $"Symbole renommé : {result.Occurrences} occurrence(s).";
         }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "Renommer le symbole", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private void GoToDefinition()
+    {
+        var editor = Editor();
+        if (editor is null) return;
+        var offset = Math.Clamp(editor.SelectionStart, 0, editor.Text.Length);
+        var start = offset;
+        while (start > 0 && (char.IsLetterOrDigit(editor.Text[start - 1]) || editor.Text[start - 1] == '_')) start--;
+        var end = offset;
+        while (end < editor.Text.Length && (char.IsLetterOrDigit(editor.Text[end]) || editor.Text[end] == '_')) end++;
+        var name = editor.Text[start..end];
+        if (name.Length == 0) { status.Text = "Aucun symbole sous le curseur."; return; }
+        var symbol = codeSymbolService.GetSymbols(editor.Text).FirstOrDefault(item => string.Equals(item.Name, name, StringComparison.Ordinal));
+        if (symbol is null) { status.Text = $"Définition introuvable pour « {name} »."; return; }
+        SelectEditorPosition(symbol.Line, symbol.Column);
+        status.Text = $"Définition atteinte : {symbol.Kind} {symbol.Name}.";
     }
 
     private void FormatCurrent()
