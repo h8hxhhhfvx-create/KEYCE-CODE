@@ -25,6 +25,7 @@ public sealed class Form1 : Form
     private readonly List<(int Start, int End, string FilePath, int Line, int Column)> searchRanges = new();
     private readonly OutputViewModel outputViewModel = new();
     private readonly TerminalViewModel terminalViewModel = new();
+    private IReadOnlyList<AgentChange>? lastAgentPlan;
     private AiChatViewModel? aiChatViewModel;
     private AiChatView? aiChatView;
     private TabControl? bottomTabs;
@@ -92,6 +93,7 @@ public sealed class Form1 : Form
         Add(gitMenu, "Envoyer les changements", async (_, _) => await PushGitAsync());
         var aiMenu = new ToolStripMenuItem("IA");
         Add(aiMenu, "Agent : proposer une modification…", async (_, _) => await GenerateAgentPlanAsync());
+        Add(aiMenu, "Agent : annuler la dernière modification", async (_, _) => await RestoreAgentPlanAsync());
         var helpMenu = new ToolStripMenuItem("Aide");
         Add(helpMenu, "Raccourcis clavier", (_, _) => ShowShortcuts());
         Add(helpMenu, "À propos de KEYCE CODE", (_, _) => ShowAbout());
@@ -236,6 +238,7 @@ public sealed class Form1 : Form
                 MessageBoxIcon.Warning);
             if (answer != DialogResult.Yes) { status.Text = "Proposition de l’agent refusée."; return; }
             await aiAgentService.ApplyPlanAsync(root, plan);
+            lastAgentPlan = plan;
             explorer.RefreshProject();
             status.Text = $"Agent IA : {plan.Count} fichier(s) modifié(s).";
         }
@@ -244,6 +247,24 @@ public sealed class Form1 : Form
             status.Text = "Agent IA : échec.";
             MessageBox.Show(this, ex.Message, "Agent IA", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private async Task RestoreAgentPlanAsync()
+    {
+        var root = workspace ?? (PathOf() is { } file ? Path.GetDirectoryName(file) : null);
+        if (string.IsNullOrWhiteSpace(root) || lastAgentPlan is null)
+        {
+            status.Text = "Aucune modification récente de l’agent à annuler.";
+            return;
+        }
+        try
+        {
+            await aiAgentService.RestoreLastPlanAsync(root);
+            lastAgentPlan = null;
+            explorer.RefreshProject();
+            status.Text = "Dernière modification de l’agent annulée.";
+        }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Agent IA", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 
     private static void Add(ToolStripMenuItem parent, string label, EventHandler action, Keys shortcut = Keys.None)

@@ -9,6 +9,7 @@ public sealed class AiAgentService
         "<file\\s+path=\\\"(?<path>[^\\\"]+)\\\">(?<content>[\\s\\S]*?)</file>",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly OllamaChatService chatService;
+    private IReadOnlyList<AgentChange>? lastAppliedPlan;
 
     public AiAgentService(OllamaChatService? chatService = null) => this.chatService = chatService ?? new OllamaChatService();
 
@@ -37,6 +38,26 @@ public sealed class AiAgentService
             await File.WriteAllTextAsync(temp, change.Content, cancellationToken);
             File.Move(temp, target, true);
         }
+        lastAppliedPlan = changes.ToArray();
+    }
+
+    public async Task RestoreLastPlanAsync(string projectRoot, CancellationToken cancellationToken = default)
+    {
+        var root = GetRoot(projectRoot);
+        if (lastAppliedPlan is null) throw new InvalidOperationException("Aucune modification récente de l’agent à annuler.");
+        foreach (var change in lastAppliedPlan.Reverse())
+        {
+            var target = ResolveInsideRoot(root, change.RelativePath);
+            if (change.ExistingContent is null)
+            {
+                if (File.Exists(target)) File.Delete(target);
+            }
+            else
+            {
+                await File.WriteAllTextAsync(target, change.ExistingContent, cancellationToken);
+            }
+        }
+        lastAppliedPlan = null;
     }
 
     public IReadOnlyList<AgentChange> ParsePlan(string projectRoot, string response)
