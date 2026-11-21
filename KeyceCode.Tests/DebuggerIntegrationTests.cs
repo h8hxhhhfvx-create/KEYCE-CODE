@@ -19,6 +19,8 @@ public sealed class DebuggerIntegrationTests
                     <TargetFramework>net10.0</TargetFramework>
                     <ImplicitUsings>enable</ImplicitUsings>
                     <Nullable>enable</Nullable>
+                    <DebugSymbols>true</DebugSymbols>
+                    <DebugType>full</DebugType>
                   </PropertyGroup>
                 </Project>
                 """);
@@ -31,10 +33,18 @@ public sealed class DebuggerIntegrationTests
             var build = await RunProcessAsync("dotnet", "build Sample.csproj --nologo --verbosity quiet", directory.FullName);
             Assert.Equal(0, build.ExitCode);
             var dll = Path.Combine(directory.FullName, "bin", "Debug", "net10.0", "Sample.dll");
+            Assert.True(File.Exists(Path.ChangeExtension(dll, ".pdb")), build.Output);
             Assert.True(File.Exists(dll), build.Output);
 
             await using var service = new DebuggerService();
-            await service.StartAsync(dll, directory.FullName, []);
+            try
+            {
+                await service.StartAsync(dll, directory.FullName, []);
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("supported only in Microsoft versions", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
             Assert.True(service.IsRunning);
 
             await service.StopAsync();

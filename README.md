@@ -95,7 +95,7 @@ Pour lancer l’application :
 dotnet run --project KeyceCode.csproj
 ```
 
-Le test du débogueur nécessite un projet C# compilable et `vsdbg.exe`. Si
+Le test du débogueur nécessite un projet C# compilable et un `vsdbg.exe` compatible avec l’hôte DAP. Certaines versions de `vsdbg` installées avec Visual Studio refusent les points d’arrêt lorsqu’elles sont pilotées hors de leur hôte officiel ; KEYCE CODE affiche alors l’erreur retournée par l’adaptateur. Si
 Visual Studio est installé dans un autre emplacement, définir
 `KEYCE_VSDBG_PATH` vers l’exécutable avant de lancer KEYCE-CODE.
 
