@@ -27,6 +27,29 @@ public sealed class GitService
     public Task PullAsync(CancellationToken ct = default) => RunCheckedAsync(["pull", "--ff-only"], ct);
     public Task PushAsync(CancellationToken ct = default) => RunCheckedAsync(["push"], ct);
 
+    public async Task<IReadOnlyList<GitBranch>> GetBranchesAsync(CancellationToken cancellationToken = default)
+    {
+        var result = await RunAsync(["branch", "--format=%(HEAD)|%(refname:short)"], cancellationToken);
+        if (result.ExitCode != 0) throw new InvalidOperationException(result.StdErr.Trim());
+        return result.StdOut.Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Split('|', 2))
+            .Where(parts => parts.Length == 2)
+            .Select(parts => new GitBranch(parts[1].Trim(), parts[0] == "*"))
+            .ToArray();
+    }
+
+    public Task CreateBranchAsync(string name, CancellationToken ct = default)
+    {
+        ValidateBranchName(name);
+        return RunCheckedAsync(["switch", "-c", name.Trim()], ct);
+    }
+
+    public Task CheckoutAsync(string name, CancellationToken ct = default)
+    {
+        ValidateBranchName(name);
+        return RunCheckedAsync(["switch", name.Trim()], ct);
+    }
+
     private async Task RunCheckedAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         var result = await RunAsync(args, ct);
@@ -54,6 +77,12 @@ public sealed class GitService
     private static GitFileStatus ParseStatusLine(string line) => line.Length < 4
         ? new("?", "?", line.Trim())
         : new(line[0].ToString(), line[1].ToString(), line[3..].Trim('"'));
+
+    private static void ValidateBranchName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Any(char.IsWhiteSpace) || name.StartsWith('-'))
+            throw new ArgumentException("Nom de branche Git invalide.", nameof(name));
+    }
 
     private sealed record ProcessResult(int ExitCode, string StdOut, string StdErr);
 }

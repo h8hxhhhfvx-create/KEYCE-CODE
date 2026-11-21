@@ -108,6 +108,9 @@ public sealed class Form1 : Form
         Add(gitMenu, "Créer un commit…", async (_, _) => await CommitChangesAsync());
         Add(gitMenu, "Tirer les changements", async (_, _) => await PullGitAsync());
         Add(gitMenu, "Envoyer les changements", async (_, _) => await PushGitAsync());
+        Add(gitMenu, "Lister les branches", async (_, _) => await ListGitBranchesAsync());
+        Add(gitMenu, "Créer une branche…", async (_, _) => await CreateGitBranchAsync());
+        Add(gitMenu, "Changer de branche…", async (_, _) => await CheckoutGitBranchAsync());
         var aiMenu = new ToolStripMenuItem("IA");
         Add(aiMenu, "Configurer Ollama…", (_, _) => ConfigureOllama());
         Add(aiMenu, "Agent : proposer une modification…", async (_, _) => await GenerateAgentPlanAsync());
@@ -254,6 +257,45 @@ public sealed class Form1 : Form
     {
         if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
         try { await gitService.PushAsync(); await RefreshGitStatusAsync(); }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task ListGitBranchesAsync()
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        try
+        {
+            var branches = await gitService.GetBranchesAsync();
+            SelectBottomTab("Sortie");
+            output.Clear();
+            output.AppendText(string.Join("\r\n", branches.Select(branch => $"{(branch.IsCurrent ? "*" : " ")} {branch.Name}")) + "\r\n");
+            status.Text = $"Git : {branches.Count} branche(s).";
+        }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task CreateGitBranchAsync()
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        var name = Microsoft.VisualBasic.Interaction.InputBox("Nom de la nouvelle branche :", "Git — créer une branche");
+        if (string.IsNullOrWhiteSpace(name)) return;
+        try { await gitService.CreateBranchAsync(name); await RefreshGitStatusAsync(); }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task CheckoutGitBranchAsync()
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        try
+        {
+            var branches = await gitService.GetBranchesAsync();
+            var name = Microsoft.VisualBasic.Interaction.InputBox(
+                "Branche cible (branches disponibles : " + string.Join(", ", branches.Select(branch => branch.Name)) + ") :",
+                "Git — changer de branche");
+            if (string.IsNullOrWhiteSpace(name)) return;
+            await gitService.CheckoutAsync(name);
+            await RefreshGitStatusAsync();
+        }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 
