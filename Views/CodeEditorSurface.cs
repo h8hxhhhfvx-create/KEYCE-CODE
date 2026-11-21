@@ -55,4 +55,5 @@ internal sealed class CodeEditorSurface : UserControl
     public void Cut() => editorView.Cut();
     public void Copy() => editorView.Copy();
     public void Paste() => editorView.Paste();
+    public void ReplaceText(string text) => editorView.ReplaceText(text);
 }

@@ -74,6 +74,12 @@ public partial class EditorView : WpfUserControl
     public void Copy() => Editor.Copy();
     public void Paste() => Editor.Paste();
 
+    public void ReplaceText(string text)
+    {
+        Editor.Document.Replace(0, Editor.Document.TextLength, text ?? string.Empty);
+        Editor.Focus();
+    }
+
     private void OnTextChanged(object? sender, EventArgs e)
     {
         UpdateMiniMap();

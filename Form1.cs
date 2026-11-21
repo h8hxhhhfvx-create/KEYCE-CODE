@@ -62,6 +62,7 @@ public sealed class Form1 : Form
         Add(editMenu, "Copier", (_, _) => Editor()?.Copy(), Keys.Control | Keys.C);
         Add(editMenu, "Coller", (_, _) => Editor()?.Paste(), Keys.Control | Keys.V);
         Add(editMenu, "Rechercher…", (_, _) => FindText(), Keys.Control | Keys.F);
+        Add(editMenu, "Remplacer…", (_, _) => ReplaceText(), Keys.Control | Keys.H);
         Add(editMenu, "Rechercher dans les fichiers…", (_, _) => SearchInFiles(), Keys.Control | Keys.Shift | Keys.F);
         var viewMenu = new ToolStripMenuItem("Affichage");
         Add(viewMenu, "Thème sombre", (_, _) => SetTheme("Dark"));
@@ -383,6 +384,27 @@ public sealed class Form1 : Form
         var index = editor.Text.IndexOf(term, editor.SelectionStart + editor.SelectionLength, StringComparison.CurrentCultureIgnoreCase);
         if (index < 0) index = editor.Text.IndexOf(term, StringComparison.CurrentCultureIgnoreCase);
         if (index >= 0) { editor.Select(index, term.Length); editor.Focus(); } else status.Text = "Aucun résultat";
+    }
+
+    private void ReplaceText()
+    {
+        var editor = Editor();
+        if (editor is null) return;
+        var search = Microsoft.VisualBasic.Interaction.InputBox("Texte à rechercher :", "Remplacer");
+        if (search.Length == 0) return;
+        var replacement = Microsoft.VisualBasic.Interaction.InputBox("Remplacer par :", "Remplacer");
+        var count = 0;
+        var source = editor.Text;
+        for (var index = 0; (index = source.IndexOf(search, index, StringComparison.CurrentCultureIgnoreCase)) >= 0; index += search.Length)
+            count++;
+        if (count == 0)
+        {
+            status.Text = "Aucun résultat à remplacer.";
+            return;
+        }
+
+        editor.ReplaceText(source.Replace(search, replacement, StringComparison.CurrentCultureIgnoreCase));
+        status.Text = $"{count} occurrence(s) remplacée(s).";
     }
 
     private void SearchInFiles()
