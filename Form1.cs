@@ -71,6 +71,7 @@ public sealed class Form1 : Form
         menuStrip = menu;
         var fileMenu = new ToolStripMenuItem("Fichier");
         Add(fileMenu, "Nouveau", (_, _) => NewFile(), Keys.Control | Keys.N);
+        Add(fileMenu, "Nouveau projet C#…", (_, _) => CreateProject());
         Add(fileMenu, "Ouvrir…", (_, _) => OpenFile(), Keys.Control | Keys.O);
         Add(fileMenu, "Ouvrir un projet C#…", (_, _) => OpenProject());
         Add(fileMenu, "Ouvrir un dossier de projet…", (_, _) => OpenWorkspace());
@@ -470,6 +471,21 @@ public sealed class Form1 : Form
         catch (Exception ex) { MessageBox.Show(this, $"Impossible d’ouvrir le fichier.\n{ex.Message}", "KeyceCode", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
     private void OpenProject() => explorer.OpenProjectDialog(this);
+
+    private void CreateProject()
+    {
+        using var folder = new FolderBrowserDialog { Description = "Choisissez où créer le projet C#" };
+        if (folder.ShowDialog(this) != DialogResult.OK) return;
+        var name = Microsoft.VisualBasic.Interaction.InputBox("Nom du projet C# :", "Nouveau projet", "MonProjet").Trim();
+        if (name.Length == 0) return;
+        try
+        {
+            var projectPath = new ProjectService().CreateCSharpProject(folder.SelectedPath, name);
+            explorer.OpenProject(projectPath);
+            status.Text = $"Projet créé : {name}";
+        }
+        catch (Exception ex) { MessageBox.Show(this, $"Impossible de créer le projet.\n{ex.Message}", "KEYCE CODE", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
 
     private void OpenRecentProject(string path)
     {

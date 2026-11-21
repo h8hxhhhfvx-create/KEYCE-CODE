@@ -47,6 +47,35 @@ public sealed class ProjectService
         project.EntryFilePath = FindProjectFile(project.RootPath);
     }
 
+    public string CreateCSharpProject(string parentDirectory, string projectName)
+    {
+        if (string.IsNullOrWhiteSpace(projectName) ||
+            projectName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+            !string.Equals(Path.GetFileName(projectName), projectName, StringComparison.Ordinal) ||
+            projectName is "." or "..")
+            throw new ArgumentException("Saisis un nom de projet C# valide.", nameof(projectName));
+
+        var root = Path.GetFullPath(Path.Combine(parentDirectory, projectName));
+        if (Directory.Exists(root) || File.Exists(root))
+            throw new IOException("Un fichier ou dossier portant ce nom existe déjà.");
+
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, projectName + ".csproj"), """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <OutputType>Exe</OutputType>
+                <TargetFramework>net10.0</TargetFramework>
+                <ImplicitUsings>enable</ImplicitUsings>
+                <Nullable>enable</Nullable>
+              </PropertyGroup>
+            </Project>
+            """);
+        File.WriteAllText(Path.Combine(root, "Program.cs"), """
+            Console.WriteLine("Bonjour depuis KEYCE CODE !");
+            """);
+        return Path.Combine(root, projectName + ".csproj");
+    }
+
     private static string? FindProjectFile(string root)
     {
         foreach (var pattern in new[] { "*.sln", "*.slnx", "*.csproj" })

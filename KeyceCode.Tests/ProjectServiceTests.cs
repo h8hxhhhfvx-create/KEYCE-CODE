@@ -67,6 +67,25 @@ public sealed class ProjectServiceTests : IDisposable
     }
 
     [Fact]
+    public void CreateCSharpProject_CreatesBuildableStarterFiles()
+    {
+        var projectPath = service.CreateCSharpProject(root, "Starter");
+
+        Assert.Equal(Path.Combine(root, "Starter", "Starter.csproj"), projectPath);
+        Assert.True(File.Exists(projectPath));
+        Assert.Contains("Bonjour depuis KEYCE CODE", File.ReadAllText(Path.Combine(root, "Starter", "Program.cs")));
+        Assert.Equal(projectPath, service.Open(projectPath).EntryFilePath);
+    }
+
+    [Fact]
+    public void CreateCSharpProject_RejectsDuplicateProjectFolder()
+    {
+        service.CreateCSharpProject(root, "Duplicate");
+
+        Assert.Throws<IOException>(() => service.CreateCSharpProject(root, "Duplicate"));
+    }
+
+    [Fact]
     public void OpenMissingPath_ThrowsFileNotFound()
     {
         var missingPath = Path.Combine(root, "missing.csproj");

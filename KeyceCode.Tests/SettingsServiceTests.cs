@@ -90,4 +90,25 @@ public sealed class SettingsServiceTests
             if (directory is not null && Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
         }
     }
+
+    [Fact]
+    public void LoadRecentProjects_IgnoresInvalidEntries()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "KeyceCodeSettings", Guid.NewGuid().ToString("N"), "settings.json");
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "{\"RecentProjects\":[null,\"\\u0000bad\",\"valid-project\"]}");
+
+            var settings = new SettingsService(path).Load();
+
+            Assert.Single(settings.RecentProjects);
+            Assert.Equal(Path.GetFullPath("valid-project"), settings.RecentProjects[0]);
+        }
+        finally
+        {
+            var directory = Path.GetDirectoryName(path);
+            if (directory is not null && Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
 }

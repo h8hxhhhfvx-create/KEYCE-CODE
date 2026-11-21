@@ -45,13 +45,21 @@ public sealed class SettingsService
             ? "http://localhost:11434"
             : settings.OllamaEndpoint.Trim().TrimEnd('/');
         settings.OllamaModel = string.IsNullOrWhiteSpace(settings.OllamaModel) ? "qwen2.5:7b" : settings.OllamaModel.Trim();
-        settings.RecentProjects = settings.RecentProjects
+        settings.RecentProjects = (settings.RecentProjects ?? [])
             .Where(path => !string.IsNullOrWhiteSpace(path))
-            .Select(Path.GetFullPath)
+            .Select(TryGetFullPath)
+            .Where(path => path is not null)
+            .Select(path => path!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(10)
             .ToList();
         if (settings.ExamMode) settings.LearningMode = false;
         return settings;
+    }
+
+    private static string? TryGetFullPath(string path)
+    {
+        try { return Path.GetFullPath(path); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { return null; }
     }
 }
