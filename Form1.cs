@@ -23,6 +23,7 @@ public sealed class Form1 : Form
     private readonly LanguageRunnerService languageRunnerService = new();
     private readonly TestService testService = new();
     private readonly DebuggerService debuggerService = new();
+    private readonly ExtensionService extensionService = new();
     private readonly List<DebugBreakpoint> debugBreakpoints = new();
     private GitService? gitService;
     private readonly List<(int Start, int End, int Line, int Column)> diagnosticRanges = new();
@@ -35,6 +36,7 @@ public sealed class Form1 : Form
     private AiChatView? aiChatView;
     private TabControl? bottomTabs;
     private MenuStrip? menuStrip;
+    private ToolStripMenuItem? extensionsMenu;
     private ToolStrip? toolBar;
     private StatusStrip? statusStrip;
     private readonly RichTextBox output = new() { Dock = DockStyle.Fill, ReadOnly = true, BackColor = Color.FromArgb(20, 22, 27), ForeColor = Color.Gainsboro, BorderStyle = BorderStyle.None, Font = new Font("Cascadia Mono", 10) };
@@ -110,10 +112,14 @@ public sealed class Form1 : Form
         Add(aiMenu, "Configurer Ollama…", (_, _) => ConfigureOllama());
         Add(aiMenu, "Agent : proposer une modification…", async (_, _) => await GenerateAgentPlanAsync());
         Add(aiMenu, "Agent : annuler la dernière modification", async (_, _) => await RestoreAgentPlanAsync());
+        var extensionMenu = new ToolStripMenuItem("Extensions");
+        extensionsMenu = extensionMenu;
+        Add(extensionMenu, "Actualiser les extensions", (_, _) => RefreshExtensions());
+        Add(extensionMenu, "Ouvrir le dossier des extensions", (_, _) => OpenExtensionsFolder());
         var helpMenu = new ToolStripMenuItem("Aide");
         Add(helpMenu, "Raccourcis clavier", (_, _) => ShowShortcuts());
         Add(helpMenu, "À propos de KEYCE CODE", (_, _) => ShowAbout());
-        menu.Items.AddRange([fileMenu, editMenu, viewMenu, runMenu, gitMenu, aiMenu, helpMenu]); MainMenuStrip = menu;
+        menu.Items.AddRange([fileMenu, editMenu, viewMenu, runMenu, gitMenu, aiMenu, extensionMenu, helpMenu]); MainMenuStrip = menu;
 
         var bar = new ToolStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, GripStyle = ToolStripGripStyle.Hidden, Padding = new Padding(6, 3, 6, 3), Height = 34, Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
         toolBar = bar;
@@ -156,6 +162,7 @@ public sealed class Form1 : Form
         ApplyChromeTheme();
         tabs.SelectedIndexChanged += (_, _) => { UpdateCursorStatus(Editor()); UpdateAiContext(); };
         NewFile();
+        RefreshExtensions();
     }
 
     private static TabPage CreateWpfTab(string title, System.Windows.Controls.UserControl view)
@@ -192,6 +199,39 @@ public sealed class Form1 : Form
             status.Text = $"Git : {snapshot.Branch}, {snapshot.Files.Count} fichier(s) modifié(s).";
         }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private void RefreshExtensions()
+    {
+        if (extensionsMenu is null) return;
+        while (extensionsMenu.DropDownItems.Count > 2) extensionsMenu.DropDownItems.RemoveAt(2);
+        try
+        {
+            var loaded = extensionService.Load(workspace);
+            foreach (var extension in loaded)
+            {
+                var item = new ToolStripMenuItem(extension.Loaded ? $"✓ {extension.Name}" : $"⚠ {extension.Name}") { ToolTipText = extension.Error ?? extension.AssemblyPath };
+                extensionsMenu.DropDownItems.Add(item);
+            }
+            foreach (var command in extensionService.Commands)
+            {
+                var item = new ToolStripMenuItem(command.Label);
+                item.Click += (_, _) => command.Action();
+                extensionsMenu.DropDownItems.Add(item);
+            }
+            status.Text = loaded.Count == 0 ? "Aucune extension installée." : $"Extensions : {loaded.Count} détectée(s).";
+        }
+        catch (Exception ex) { status.Text = "Erreur extensions : " + ex.Message; }
+    }
+
+    private void OpenExtensionsFolder()
+    {
+        try
+        {
+            Directory.CreateDirectory(extensionService.ExtensionsDirectory);
+            Process.Start(new ProcessStartInfo("explorer.exe", Quote(extensionService.ExtensionsDirectory)) { UseShellExecute = true });
+        }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Extensions", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 
     private async Task CommitChangesAsync()
