@@ -14,6 +14,8 @@ public sealed class Form1 : Form
     private readonly TabControl tabs = new() { Dock = DockStyle.Fill, Appearance = TabAppearance.Normal };
     private readonly ExplorerView explorer = new(new ProjectViewModel(new FileService(), new ProjectService()));
     private readonly FileService fileService = new();
+    private readonly SettingsService settingsService = new();
+    private AppSettings settings = new();
     private readonly CodeAnalysisService codeAnalysisService = new();
     private readonly SearchService searchService = new();
     private readonly List<(int Start, int End, int Line, int Column)> diagnosticRanges = new();
@@ -26,6 +28,7 @@ public sealed class Form1 : Form
 
     public Form1()
     {
+        settings = settingsService.Load();
         Text = "KeyceCode"; Width = 1280; Height = 800; MinimumSize = new Size(900, 600);
         BackColor = Color.FromArgb(37, 40, 48); ForeColor = Color.Gainsboro; StartPosition = FormStartPosition.CenterScreen;
         BuildLayout();
@@ -56,8 +59,13 @@ public sealed class Form1 : Form
         Add(editMenu, "Coller", (_, _) => Editor()?.Paste(), Keys.Control | Keys.V);
         Add(editMenu, "Rechercher…", (_, _) => FindText(), Keys.Control | Keys.F);
         Add(editMenu, "Rechercher dans les fichiers…", (_, _) => SearchInFiles(), Keys.Control | Keys.Shift | Keys.F);
+        var viewMenu = new ToolStripMenuItem("Affichage");
+        Add(viewMenu, "Thème sombre", (_, _) => SetTheme("Dark"));
+        Add(viewMenu, "Thème clair", (_, _) => SetTheme("Light"));
+        Add(viewMenu, "Augmenter la taille du texte", (_, _) => AdjustEditorFontSize(1));
+        Add(viewMenu, "Réduire la taille du texte", (_, _) => AdjustEditorFontSize(-1));
         var runMenu = new ToolStripMenuItem("Exécuter"); Add(runMenu, "Lancer le fichier", async (_, _) => await RunCurrent(), Keys.F5);
-        menu.Items.AddRange([fileMenu, editMenu, runMenu]); MainMenuStrip = menu;
+        menu.Items.AddRange([fileMenu, editMenu, viewMenu, runMenu]); MainMenuStrip = menu;
 
         var bar = new ToolStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, GripStyle = ToolStripGripStyle.Hidden, Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
         Button(bar, "＋ Nouveau", () => NewFile()); Button(bar, "Ouvrir", OpenFile); Button(bar, "Projet C#", OpenProject); Button(bar, "Dossier", OpenWorkspace); Button(bar, "Enregistrer", SaveCurrent);
@@ -118,7 +126,7 @@ public sealed class Form1 : Form
     private void NewFile()
     {
         var page = new TabPage("Sans titre") { Tag = null, BackColor = Color.FromArgb(30, 33, 40) };
-        var surface = new CodeEditorSurface(); surface.Modified = false;
+        var surface = new CodeEditorSurface(); ApplyEditorSettings(surface); surface.Modified = false;
         page.Controls.Add(surface); tabs.TabPages.Add(page); tabs.SelectedTab = page; UpdateTitle(page);
     }
     private void OpenFile()
@@ -133,7 +141,7 @@ public sealed class Form1 : Form
         try
         {
             var page = new TabPage(Path.GetFileName(path)) { Tag = path, BackColor = Color.FromArgb(30, 33, 40) };
-            var surface = new CodeEditorSurface(); page.Controls.Add(surface); surface.ApplyLanguage(Path.GetExtension(path)); surface.Text = fileService.ReadText(path); surface.Modified = false;
+            var surface = new CodeEditorSurface(); page.Controls.Add(surface); ApplyEditorSettings(surface); surface.ApplyLanguage(Path.GetExtension(path)); surface.Text = fileService.ReadText(path); surface.Modified = false;
             tabs.TabPages.Add(page); tabs.SelectedTab = page; UpdateTitle(page); SetProjectContext(workspace ?? path); status.Text = path;
         }
         catch (Exception ex) { MessageBox.Show(this, $"Impossible d’ouvrir le fichier.\n{ex.Message}", "KeyceCode", MessageBoxButtons.OK, MessageBoxIcon.Error); }
@@ -147,6 +155,26 @@ public sealed class Form1 : Form
     }
 
     private void SaveCurrent() { if (tabs.SelectedTab is { } page) SavePage(page); }
+
+    private void ApplyEditorSettings(CodeEditorSurface surface) => surface.ApplyAppearance(settings);
+
+    private void SetTheme(string theme)
+    {
+        settings.Theme = theme;
+        settingsService.Save(settings);
+        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
+            ApplyEditorSettings(surface);
+        status.Text = $"Thème {theme switch { "Dark" => "sombre", _ => "clair" }} activé.";
+    }
+
+    private void AdjustEditorFontSize(double amount)
+    {
+        settings.EditorFontSize = Math.Clamp(settings.EditorFontSize + amount, 8, 32);
+        settingsService.Save(settings);
+        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
+            ApplyEditorSettings(surface);
+        status.Text = $"Taille du texte : {settings.EditorFontSize:0} pt";
+    }
 
     private void SaveAllOpenFiles()
     {

@@ -1,5 +1,6 @@
 using System.Windows.Forms.Integration;
 using System.ComponentModel;
+using KeyceCode.Models;
 
 namespace KeyceCode.Views;
 
@@ -48,6 +49,7 @@ internal sealed class CodeEditorSurface : UserControl
 
     public void Select(int start, int length) => editorView.Select(start, length);
     public void ApplyLanguage(string? extension) => editorView.ApplyLanguage(extension);
+    public void ApplyAppearance(AppSettings settings) => editorView.ApplyAppearance(settings);
     public void Undo() => editorView.Undo();
     public void Redo() => editorView.Redo();
     public void Cut() => editorView.Cut();

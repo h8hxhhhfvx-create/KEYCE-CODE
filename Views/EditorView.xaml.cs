@@ -1,5 +1,6 @@
 using System.Windows;
 using ICSharpCode.AvalonEdit.Document;
+using KeyceCode.Models;
 using KeyceCode.Services;
 using WpfUserControl = System.Windows.Controls.UserControl;
 
@@ -80,6 +81,18 @@ public partial class EditorView : WpfUserControl
     }
 
     public void ApplyLanguage(string? extension) => highlightingService.Apply(Editor, extension);
+
+    public void ApplyAppearance(AppSettings settings)
+    {
+        var dark = !string.Equals(settings.Theme, "Light", StringComparison.OrdinalIgnoreCase);
+        var background = dark ? "#1E2128" : "#FAFAFA";
+        var foreground = dark ? "#DCDCDC" : "#202020";
+        Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(background));
+        Editor.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(background));
+        Editor.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(foreground));
+        Editor.FontSize = Math.Clamp(settings.EditorFontSize, 8, 32);
+        Editor.WordWrap = settings.WordWrap;
+    }
 
     private void UpdateMiniMap()
     {
