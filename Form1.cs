@@ -19,6 +19,7 @@ public sealed class Form1 : Form
     private readonly CodeAnalysisService codeAnalysisService = new();
     private readonly FormatService formatService = new();
     private readonly CodeSymbolService codeSymbolService = new();
+    private readonly CodeRenameService codeRenameService = new();
     private readonly SearchService searchService = new();
     private readonly AiAgentService aiAgentService = new();
     private readonly LanguageRunnerService languageRunnerService = new();
@@ -86,6 +87,7 @@ public sealed class Form1 : Form
         Add(editMenu, "Remplacer…", (_, _) => ReplaceText(), Keys.Control | Keys.H);
         Add(editMenu, "Aller à la ligne…", (_, _) => GoToLine(), Keys.Control | Keys.G);
         Add(editMenu, "Aller au symbole…", (_, _) => GoToSymbol(), Keys.Control | Keys.Shift | Keys.O);
+        Add(editMenu, "Renommer le symbole…", (_, _) => RenameSymbol(), Keys.F2);
         Add(editMenu, "Formater le document", (_, _) => FormatCurrent(), Keys.Control | Keys.Shift | Keys.I);
         Add(editMenu, "Rechercher dans les fichiers…", (_, _) => SearchInFiles(), Keys.Control | Keys.Shift | Keys.F);
         Add(editMenu, "Remplacer dans les fichiers…", (_, _) => ReplaceInFiles(), Keys.Control | Keys.Shift | Keys.H);
@@ -409,6 +411,7 @@ public sealed class Form1 : Form
             ("Édition : Remplacer", ReplaceText),
             ("Édition : Aller à la ligne", GoToLine),
             ("Édition : Aller au symbole", GoToSymbol),
+            ("Édition : Renommer le symbole", RenameSymbol),
             ("Édition : Formater le document", FormatCurrent),
             ("Projet : Compiler", CompileProject),
             ("Projet : Exécuter", RunProject),
@@ -946,6 +949,22 @@ public sealed class Form1 : Form
         using var palette = new CommandPaletteForm(symbols.Select(symbol =>
             (symbol.Display, (Action)(() => SelectEditorPosition(symbol.Line, symbol.Column)))));
         palette.ShowDialog(this);
+    }
+
+    private void RenameSymbol()
+    {
+        var editor = Editor();
+        if (editor is null) return;
+        var newName = Microsoft.VisualBasic.Interaction.InputBox("Nouveau nom du symbole :", "Renommer le symbole");
+        if (string.IsNullOrWhiteSpace(newName)) return;
+        try
+        {
+            var result = codeRenameService.Rename(editor.Text, editor.SelectionStart, newName.Trim());
+            if (result is null) { status.Text = "Le curseur n’est pas placé sur un symbole C# renommable."; return; }
+            editor.ReplaceText(result.Text);
+            status.Text = result.Occurrences == 0 ? "Le symbole porte déjà ce nom." : $"Symbole renommé : {result.Occurrences} occurrence(s).";
+        }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Renommer le symbole", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 
     private void FormatCurrent()
