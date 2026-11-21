@@ -15,4 +15,12 @@ public sealed class FormatServiceTests
         Assert.Contains("    static void Main()", formatted, StringComparison.Ordinal);
         Assert.Contains("        System.Console.WriteLine(\"OK\");", formatted, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void FormatCSharp_UsesConfiguredIndentationSize()
+    {
+        var formatted = new FormatService().FormatCSharp("class Demo{void Run(){int value=1;}}", 2);
+        Assert.Contains("  void Run()", formatted, StringComparison.Ordinal);
+        Assert.Contains("    int value = 1;", formatted, StringComparison.Ordinal);
+    }
 }

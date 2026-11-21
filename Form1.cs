@@ -980,7 +980,7 @@ public sealed class Form1 : Form
 
         try
         {
-            var formatted = formatService.FormatCSharp(editor.Text);
+            var formatted = formatService.FormatCSharp(editor.Text, settings.TabSize);
             if (!string.Equals(formatted, editor.Text, StringComparison.Ordinal))
                 editor.ReplaceText(formatted);
             status.Text = "Document C# formaté.";
