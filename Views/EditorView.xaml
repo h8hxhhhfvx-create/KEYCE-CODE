@@ -21,7 +21,7 @@
                                VerticalScrollBarVisibility="Auto"
                                WordWrap="False"
                                IsReadOnly="False" />
-        <Border Grid.Column="1" Background="#181A20" BorderBrush="#30343D" BorderThickness="1,0,0,0">
+        <Border x:Name="MiniMapBorder" Grid.Column="1" Background="#181A20" BorderBrush="#30343D" BorderThickness="1,0,0,0">
             <ScrollViewer x:Name="MiniMapScrollViewer"
                           VerticalScrollBarVisibility="Hidden"
                           HorizontalScrollBarVisibility="Hidden"

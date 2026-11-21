@@ -87,9 +87,14 @@ public partial class EditorView : WpfUserControl
         var dark = !string.Equals(settings.Theme, "Light", StringComparison.OrdinalIgnoreCase);
         var background = dark ? "#1E2128" : "#FAFAFA";
         var foreground = dark ? "#DCDCDC" : "#202020";
+        var minimapBackground = dark ? "#181A20" : "#F0F2F5";
+        var minimapForeground = dark ? "#737B8C" : "#7A8492";
         Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(background));
         Editor.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(background));
         Editor.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(foreground));
+        MiniMapBorder.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(minimapBackground));
+        MiniMapScrollViewer.Background = MiniMapBorder.Background;
+        MiniMapText.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(minimapForeground));
         Editor.FontSize = Math.Clamp(settings.EditorFontSize, 8, 32);
         Editor.WordWrap = settings.WordWrap;
     }

@@ -128,7 +128,7 @@ public sealed class Form1 : Form
     {
         var item = new ToolStripButton(label)
         {
-            AutoSize = false,
+            AutoSize = true,
             Height = 27,
             Padding = new Padding(8, 0, 8, 0),
             Margin = new Padding(1, 0, 1, 0),
@@ -214,6 +214,7 @@ public sealed class Form1 : Form
         }
 
         ApplyWinFormsColors(this, surface, text);
+        explorer.ApplyTheme(dark);
         output.BackColor = dark ? Color.FromArgb(20, 22, 27) : Color.White;
         output.ForeColor = dark ? Color.Gainsboro : Color.FromArgb(32, 35, 40);
     }
