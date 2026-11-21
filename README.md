@@ -38,6 +38,8 @@ WPF (AvalonEdit, terminal, compilation et assistant) sont hébergées avec
 - formatage C# avec Roslyn en respectant la taille de tabulation choisie ;
 - analyse en direct et diagnostics avec ligne, colonne et code d’erreur ;
 - thèmes clair/sombre, retour à la ligne, taille de police et tabulations.
+- boîte de paramètres unifiée pour modifier ces options et la configuration
+  Ollama sans quitter l’éditeur.
 
 ### Exécution et outils de développement
 
@@ -50,6 +52,8 @@ WPF (AvalonEdit, terminal, compilation et assistant) sont hébergées avec
 - points d’arrêt, lancement/arrêt du débogage, continuation et pas-à-pas avec
   `vsdbg.exe` ;
 - affichage des frames et variables locales lors d’un arrêt.
+- mode apprentissage et mode examen, avec protections adaptées pour un contexte
+  pédagogique.
 
 ### Git et assistant IA
 
@@ -58,6 +62,8 @@ WPF (AvalonEdit, terminal, compilation et assistant) sont hébergées avec
 - conversation locale avec Ollama, configuration de l’endpoint et du modèle ;
 - propositions de modifications de l’agent IA avec aperçu et confirmation ;
 - restauration de la dernière modification proposée par l’agent.
+- palette de commandes (`Ctrl+Maj+P`) et système d’extensions DLL chargé depuis
+  le dossier utilisateur `KeyceCode/Extensions`.
 
 ## Organisation du code
 

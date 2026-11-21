@@ -48,6 +48,19 @@ public sealed class ProjectServiceTests : IDisposable
     }
 
     [Fact]
+    public void OpenProjectFolder_FindsProjectInsideNestedSourceFolder()
+    {
+        var nested = Path.Combine(root, "src", "Demo");
+        Directory.CreateDirectory(nested);
+        var projectPath = Path.Combine(nested, "Demo.csproj");
+        File.WriteAllText(projectPath, string.Empty);
+
+        var project = service.Open(root);
+
+        Assert.Equal(projectPath, project.EntryFilePath);
+    }
+
+    [Fact]
     public void OpenFolderWithoutCSharpProject_ExplainsTheProblem()
     {
         Assert.Throws<InvalidOperationException>(() => service.Open(root));
