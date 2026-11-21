@@ -379,6 +379,7 @@ public sealed class Form1 : Form
         try
         {
             var results = searchService.Search(root, query);
+            SelectBottomTab("Sortie");
             output.Clear();
             if (results.Count == 0)
             {
@@ -404,6 +405,7 @@ public sealed class Form1 : Form
         try
         {
             var diagnostics = codeAnalysisService.Analyze(editor.Text);
+            SelectBottomTab("Sortie");
             output.Clear();
             diagnosticRanges.Clear();
 
