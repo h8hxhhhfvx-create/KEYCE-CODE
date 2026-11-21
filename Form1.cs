@@ -64,6 +64,7 @@ public sealed class Form1 : Form
         Add(editMenu, "Coller", (_, _) => Editor()?.Paste(), Keys.Control | Keys.V);
         Add(editMenu, "Rechercher…", (_, _) => FindText(), Keys.Control | Keys.F);
         Add(editMenu, "Remplacer…", (_, _) => ReplaceText(), Keys.Control | Keys.H);
+        Add(editMenu, "Aller à la ligne…", (_, _) => GoToLine(), Keys.Control | Keys.G);
         Add(editMenu, "Rechercher dans les fichiers…", (_, _) => SearchInFiles(), Keys.Control | Keys.Shift | Keys.F);
         var viewMenu = new ToolStripMenuItem("Affichage");
         Add(viewMenu, "Thème sombre", (_, _) => SetTheme("Dark"));
@@ -269,7 +270,7 @@ public sealed class Form1 : Form
     private void ShowShortcuts()
     {
         MessageBox.Show(this,
-            "Ctrl+N  Nouveau fichier\nCtrl+O  Ouvrir\nCtrl+S  Enregistrer\nCtrl+Maj+S  Enregistrer sous\nCtrl+W  Fermer l’onglet\nCtrl+Z  Annuler\nCtrl+Y  Rétablir\nCtrl+F  Rechercher\nCtrl+H  Remplacer\nCtrl+Maj+F  Rechercher dans les fichiers\nF5  Exécuter",
+            "Ctrl+N  Nouveau fichier\nCtrl+O  Ouvrir\nCtrl+S  Enregistrer\nCtrl+Maj+S  Enregistrer sous\nCtrl+W  Fermer l’onglet\nCtrl+Z  Annuler\nCtrl+Y  Rétablir\nCtrl+F  Rechercher\nCtrl+H  Remplacer\nCtrl+G  Aller à la ligne\nCtrl+Maj+F  Rechercher dans les fichiers\nF5  Exécuter",
             "Raccourcis clavier — KEYCE CODE",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
@@ -428,6 +429,22 @@ public sealed class Form1 : Form
 
         editor.ReplaceText(source.Replace(search, replacement, StringComparison.CurrentCultureIgnoreCase));
         status.Text = $"{count} occurrence(s) remplacée(s).";
+    }
+
+    private void GoToLine()
+    {
+        var editor = Editor();
+        if (editor is null) return;
+        var value = Microsoft.VisualBasic.Interaction.InputBox("Numéro de ligne :", "Aller à la ligne", "1");
+        if (!int.TryParse(value, out var line) || line < 1)
+        {
+            status.Text = "Numéro de ligne invalide.";
+            return;
+        }
+
+        var position = GetLineStartOffset(editor.Text, line);
+        editor.Select(Math.Min(position, editor.Text.Length), 0);
+        status.Text = $"Ligne {line} sélectionnée.";
     }
 
     private void SearchInFiles()
