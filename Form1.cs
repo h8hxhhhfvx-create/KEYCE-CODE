@@ -98,6 +98,7 @@ public sealed class Form1 : Form
         Add(viewMenu, "Palette de commandes…", (_, _) => ShowCommandPalette(), Keys.Control | Keys.Shift | Keys.P);
         Add(viewMenu, "Thème sombre", (_, _) => SetTheme("Dark"));
         Add(viewMenu, "Thème clair", (_, _) => SetTheme("Light"));
+        Add(viewMenu, "Ouvrir les paramètres…", (_, _) => OpenSettingsDialog());
         Add(viewMenu, "Augmenter la taille du texte", (_, _) => AdjustEditorFontSize(1));
         Add(viewMenu, "Réduire la taille du texte", (_, _) => AdjustEditorFontSize(-1));
         Add(viewMenu, "Activer/désactiver le retour à la ligne", (_, _) => ToggleWordWrap());
@@ -622,18 +623,20 @@ public sealed class Form1 : Form
 
     private void ConfigureOllama()
     {
-        var endpoint = Microsoft.VisualBasic.Interaction.InputBox(
-            "Adresse du serveur Ollama :", "Configuration Ollama", settings.OllamaEndpoint);
-        if (string.IsNullOrWhiteSpace(endpoint)) return;
+        OpenSettingsDialog();
+    }
 
-        var model = Microsoft.VisualBasic.Interaction.InputBox(
-            "Nom du modèle Ollama :", "Configuration Ollama", settings.OllamaModel);
-        if (string.IsNullOrWhiteSpace(model)) return;
-
-        settings.OllamaEndpoint = endpoint.Trim().TrimEnd('/');
-        settings.OllamaModel = model.Trim();
+    private void OpenSettingsDialog()
+    {
+        using var dialog = new SettingsDialog(settings);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        settings = dialog.GetSettings();
         settingsService.Save(settings);
-        status.Text = $"Ollama configuré : {settings.OllamaModel}";
+        ApplyChromeTheme();
+        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
+            ApplyEditorSettings(surface);
+        ApplyPedagogicalMode();
+        status.Text = "Paramètres enregistrés.";
     }
 
     private void SaveAllOpenFiles()
