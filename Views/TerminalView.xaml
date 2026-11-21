@@ -1,0 +1,65 @@
+<UserControl x:Class="KeyceCode.Views.TerminalView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#1E1E1E">
+
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/KeyceCode;component/Resources/ConsoleTemplates.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- En-tête du terminal -->
+        <DockPanel Grid.Row="0" Margin="6">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Content="■ Arrêter" Command="{Binding StopCommand}" Style="{StaticResource ConsoleButtonStyle}"/>
+                <Button Content="Effacer" Command="{Binding ClearCommand}" Style="{StaticResource ConsoleButtonStyle}" Margin="0"/>
+            </StackPanel>
+            <TextBlock Text="TERMINAL" Foreground="#9CDCFE" FontWeight="SemiBold" VerticalAlignment="Center"/>
+        </DockPanel>
+
+        <!-- Historique des commandes et de leur résultat -->
+        <ListBox x:Name="LinesList"
+                 Grid.Row="1"
+                 Background="#1E1E1E"
+                 BorderThickness="0"
+                 ItemsSource="{Binding Log.Lines}"
+                 ItemTemplate="{StaticResource ConsoleLineTemplate}"
+                 ItemContainerStyle="{StaticResource ConsoleItemStyle}"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+
+        <!-- Invite de commande : Entrée = exécuter, ↑/↓ = historique -->
+        <DockPanel Grid.Row="2" Margin="6">
+            <TextBlock Text="{Binding Prompt}"
+                       DockPanel.Dock="Left"
+                       Foreground="#DCDCAA"
+                       FontFamily="Cascadia Mono, Consolas"
+                       FontSize="13"
+                       VerticalAlignment="Center"
+                       Margin="0,0,6,0"/>
+            <TextBox Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
+                     Background="#3C3C3C"
+                     Foreground="White"
+                     CaretBrush="White"
+                     BorderThickness="0"
+                     Padding="4"
+                     FontFamily="Cascadia Mono, Consolas"
+                     FontSize="13">
+                <TextBox.InputBindings>
+                    <KeyBinding Key="Return" Command="{Binding SubmitCommand}"/>
+                    <KeyBinding Key="Up" Command="{Binding HistoryUpCommand}"/>
+                    <KeyBinding Key="Down" Command="{Binding HistoryDownCommand}"/>
+                </TextBox.InputBindings>
+            </TextBox>
+        </DockPanel>
+    </Grid>
+</UserControl>
