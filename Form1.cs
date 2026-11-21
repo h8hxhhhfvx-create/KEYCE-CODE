@@ -24,6 +24,7 @@ public sealed class Form1 : Form
     private readonly List<(int Start, int End, string FilePath, int Line, int Column)> searchRanges = new();
     private readonly OutputViewModel outputViewModel = new();
     private readonly TerminalViewModel terminalViewModel = new();
+    private AiChatViewModel? aiChatViewModel;
     private TabControl? bottomTabs;
     private MenuStrip? menuStrip;
     private ToolStrip? toolBar;
@@ -36,6 +37,7 @@ public sealed class Form1 : Form
     public Form1()
     {
         settings = settingsService.Load();
+        aiChatViewModel = new AiChatViewModel(settings);
         Text = "KeyceCode"; Width = 1280; Height = 800; MinimumSize = new Size(900, 600);
         BackColor = Color.FromArgb(37, 40, 48); ForeColor = Color.Gainsboro; StartPosition = FormStartPosition.CenterScreen;
         BuildLayout();
@@ -118,6 +120,7 @@ public sealed class Form1 : Form
         bottomTabs.TabPages.Add(new TabPage("Sortie") { Controls = { outputPanel } });
         bottomTabs.TabPages.Add(CreateWpfTab("Compilation", new OutputView { DataContext = outputViewModel }));
         bottomTabs.TabPages.Add(CreateWpfTab("Terminal", new TerminalView { DataContext = terminalViewModel }));
+        bottomTabs.TabPages.Add(CreateWpfTab("Assistant IA", new AiChatView { DataContext = aiChatViewModel }));
         editorOutput.Panel2.Controls.Add(bottomTabs); split.Panel2.Controls.Add(editorOutput);
         var strip = new StatusStrip { BackColor = Color.FromArgb(0, 104, 156), ForeColor = Color.White, Font = new Font("Segoe UI", 9F) }; strip.Items.Add(status);
         strip.Items.Add(cursorStatus);
@@ -125,7 +128,7 @@ public sealed class Form1 : Form
         Controls.Add(split); Controls.Add(bar); Controls.Add(menu); Controls.Add(strip);
         bar.Dock = DockStyle.Top; menu.Dock = DockStyle.Top; strip.Dock = DockStyle.Bottom;
         ApplyChromeTheme();
-        tabs.SelectedIndexChanged += (_, _) => UpdateCursorStatus(Editor());
+        tabs.SelectedIndexChanged += (_, _) => { UpdateCursorStatus(Editor()); UpdateAiContext(); };
         NewFile();
     }
 
@@ -426,6 +429,14 @@ public sealed class Form1 : Form
         if (sender is not CodeEditorSurface editor) return;
         var page = tabs.TabPages.Cast<TabPage>().FirstOrDefault(t => EditorOf(t) == editor); if (page is null) return;
         UpdateTitle(page);
+        if (ReferenceEquals(page, tabs.SelectedTab) && aiChatViewModel is not null)
+            aiChatViewModel.ContextText = editor.Text;
+    }
+
+    private void UpdateAiContext()
+    {
+        if (aiChatViewModel is not null && Editor() is { } editor)
+            aiChatViewModel.ContextText = editor.Text;
     }
 
     private void UpdateOpenPaths(string oldPath, string newPath)
