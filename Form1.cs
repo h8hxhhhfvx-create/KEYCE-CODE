@@ -12,6 +12,8 @@ public sealed class Form1 : Form
     private readonly TabControl tabs = new() { Dock = DockStyle.Fill, Appearance = TabAppearance.Normal };
     private readonly ExplorerView explorer = new(new ProjectViewModel(new FileService(), new ProjectService()));
     private readonly FileService fileService = new();
+    private readonly CodeAnalysisService codeAnalysisService = new();
+    private readonly List<(int Start, int End, int Line, int Column)> diagnosticRanges = new();
     private readonly RichTextBox output = new() { Dock = DockStyle.Fill, ReadOnly = true, BackColor = Color.FromArgb(20, 22, 27), ForeColor = Color.Gainsboro, BorderStyle = BorderStyle.None, Font = new Font("Cascadia Mono", 10) };
     private readonly ToolStripStatusLabel status = new("Prêt") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
     private string? workspace;
@@ -21,6 +23,7 @@ public sealed class Form1 : Form
         Text = "KeyceCode"; Width = 1280; Height = 800; MinimumSize = new Size(900, 600);
         BackColor = Color.FromArgb(37, 40, 48); ForeColor = Color.Gainsboro; StartPosition = FormStartPosition.CenterScreen;
         BuildLayout();
+        output.MouseDoubleClick += Output_MouseDoubleClick;
         FormClosing += (_, e) => { if (tabs.TabPages.Cast<TabPage>().Any(t => !CanClose(t))) e.Cancel = true; };
     }
 
@@ -51,6 +54,7 @@ public sealed class Form1 : Form
         var bar = new ToolStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, GripStyle = ToolStripGripStyle.Hidden, Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
         Button(bar, "＋ Nouveau", () => NewFile()); Button(bar, "Ouvrir", OpenFile); Button(bar, "Projet C#", OpenProject); Button(bar, "Dossier", OpenWorkspace); Button(bar, "Enregistrer", SaveCurrent);
         bar.Items.Add(new ToolStripSeparator()); Button(bar, "▶ Exécuter (F5)", async () => await RunCurrent());
+        Button(bar, "🔍 Analyser", AnalyzeCurrent);
 
         var split = new SplitContainer { Size = new Size(1200, 700), Dock = DockStyle.Fill, SplitterDistance = 260, BackColor = Color.FromArgb(37, 40, 48), Panel1MinSize = 180, Panel2MinSize = 400 };
         split.Panel1.Controls.Add(explorer);
@@ -192,6 +196,68 @@ public sealed class Form1 : Form
         if (index < 0) index = editor.Text.IndexOf(term, StringComparison.CurrentCultureIgnoreCase);
         if (index >= 0) { editor.Select(index, term.Length); editor.Focus(); } else status.Text = "Aucun résultat";
     }
+
+    private void AnalyzeCurrent()
+    {
+        var editor = Editor();
+        if (editor is null) return;
+
+        try
+        {
+            var diagnostics = codeAnalysisService.Analyze(editor.Text);
+            output.Clear();
+            diagnosticRanges.Clear();
+
+            if (diagnostics.Count == 0)
+            {
+                output.Text = "Aucune erreur ni aucun avertissement détecté.";
+                status.Text = "Analyse terminée.";
+                return;
+            }
+
+            foreach (var diagnostic in diagnostics)
+            {
+                var start = output.TextLength;
+                output.AppendText($"{diagnostic.Severity} | {diagnostic.Code} | Ligne {diagnostic.Line}, Colonne {diagnostic.Column}\r\n{diagnostic.Message}\r\n\r\n");
+                diagnosticRanges.Add((start, output.TextLength, diagnostic.Line, diagnostic.Column));
+            }
+
+            status.Text = $"Analyse terminée : {diagnostics.Count} problème(s).";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Erreur d'analyse", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void Output_MouseDoubleClick(object? sender, MouseEventArgs e)
+    {
+        var index = output.GetCharIndexFromPosition(e.Location);
+        var diagnostic = diagnosticRanges.FirstOrDefault(d => index >= d.Start && index < d.End);
+        if (diagnostic.Line == 0) return;
+
+        var editor = Editor();
+        if (editor is null) return;
+
+        var position = GetLineStartOffset(editor.Text, diagnostic.Line) + Math.Max(0, diagnostic.Column - 1);
+        editor.Select(Math.Min(position, editor.Text.Length), 0);
+        editor.Focus();
+        status.Text = $"Erreur sélectionnée : ligne {diagnostic.Line}, colonne {diagnostic.Column}";
+    }
+
+    private static int GetLineStartOffset(string text, int lineNumber)
+    {
+        if (lineNumber <= 1) return 0;
+        var currentLine = 1;
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (text[i] != '\n') continue;
+            currentLine++;
+            if (currentLine == lineNumber) return i + 1;
+        }
+        return text.Length;
+    }
+
     private async Task RunCurrent()
     {
         var editor = Editor(); if (editor is null) return;
