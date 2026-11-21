@@ -17,6 +17,7 @@ public sealed class Form1 : Form
     private readonly SettingsService settingsService = new();
     private AppSettings settings = new();
     private readonly CodeAnalysisService codeAnalysisService = new();
+    private readonly FormatService formatService = new();
     private readonly SearchService searchService = new();
     private readonly List<(int Start, int End, int Line, int Column)> diagnosticRanges = new();
     private readonly List<(int Start, int End, string FilePath, int Line, int Column)> searchRanges = new();
@@ -66,6 +67,7 @@ public sealed class Form1 : Form
         Add(editMenu, "Rechercher…", (_, _) => FindText(), Keys.Control | Keys.F);
         Add(editMenu, "Remplacer…", (_, _) => ReplaceText(), Keys.Control | Keys.H);
         Add(editMenu, "Aller à la ligne…", (_, _) => GoToLine(), Keys.Control | Keys.G);
+        Add(editMenu, "Formater le document", (_, _) => FormatCurrent(), Keys.Control | Keys.Shift | Keys.I);
         Add(editMenu, "Rechercher dans les fichiers…", (_, _) => SearchInFiles(), Keys.Control | Keys.Shift | Keys.F);
         var viewMenu = new ToolStripMenuItem("Affichage");
         Add(viewMenu, "Thème sombre", (_, _) => SetTheme("Dark"));
@@ -271,7 +273,7 @@ public sealed class Form1 : Form
     private void ShowShortcuts()
     {
         MessageBox.Show(this,
-            "Ctrl+N  Nouveau fichier\nCtrl+O  Ouvrir\nCtrl+S  Enregistrer\nCtrl+Maj+S  Enregistrer sous\nCtrl+W  Fermer l’onglet\nCtrl+Z  Annuler\nCtrl+Y  Rétablir\nCtrl+F  Rechercher\nCtrl+H  Remplacer\nCtrl+G  Aller à la ligne\nCtrl++ / Ctrl+-  Zoomer\nCtrl+0  Taille normale\nCtrl+Maj+F  Rechercher dans les fichiers\nF5  Exécuter",
+            "Ctrl+N  Nouveau fichier\nCtrl+O  Ouvrir\nCtrl+S  Enregistrer\nCtrl+Maj+S  Enregistrer sous\nCtrl+W  Fermer l’onglet\nCtrl+Z  Annuler\nCtrl+Y  Rétablir\nCtrl+F  Rechercher\nCtrl+H  Remplacer\nCtrl+G  Aller à la ligne\nCtrl+Maj+I  Formater le document\nCtrl++ / Ctrl+-  Zoomer\nCtrl+0  Taille normale\nCtrl+Maj+F  Rechercher dans les fichiers\nF5  Exécuter",
             "Raccourcis clavier — KEYCE CODE",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
@@ -446,6 +448,30 @@ public sealed class Form1 : Form
         var position = GetLineStartOffset(editor.Text, line);
         editor.Select(Math.Min(position, editor.Text.Length), 0);
         status.Text = $"Ligne {line} sélectionnée.";
+    }
+
+    private void FormatCurrent()
+    {
+        var editor = Editor();
+        if (editor is null) return;
+        var extension = Path.GetExtension(PathOf() ?? ".cs");
+        if (!string.IsNullOrEmpty(extension) && !string.Equals(extension, ".cs", StringComparison.OrdinalIgnoreCase))
+        {
+            status.Text = "Le formatage automatique est disponible pour C# uniquement.";
+            return;
+        }
+
+        try
+        {
+            var formatted = formatService.FormatCSharp(editor.Text);
+            if (!string.Equals(formatted, editor.Text, StringComparison.Ordinal))
+                editor.ReplaceText(formatted);
+            status.Text = "Document C# formaté.";
+        }
+        catch (Exception ex)
+        {
+            status.Text = "Formatage impossible : " + ex.Message;
+        }
     }
 
     private void SearchInFiles()
