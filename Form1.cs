@@ -15,6 +15,7 @@ public sealed class Form1 : Form
     private readonly ExplorerView explorer = new(new ProjectViewModel(new FileService(), new ProjectService()));
     private readonly FileService fileService = new();
     private readonly CodeAnalysisService codeAnalysisService = new();
+    private readonly SearchService searchService = new();
     private readonly List<(int Start, int End, int Line, int Column)> diagnosticRanges = new();
     private readonly OutputViewModel outputViewModel = new();
     private readonly TerminalViewModel terminalViewModel = new();
@@ -54,6 +55,7 @@ public sealed class Form1 : Form
         Add(editMenu, "Copier", (_, _) => Editor()?.Copy(), Keys.Control | Keys.C);
         Add(editMenu, "Coller", (_, _) => Editor()?.Paste(), Keys.Control | Keys.V);
         Add(editMenu, "Rechercher…", (_, _) => FindText(), Keys.Control | Keys.F);
+        Add(editMenu, "Rechercher dans les fichiers…", (_, _) => SearchInFiles(), Keys.Control | Keys.Shift | Keys.F);
         var runMenu = new ToolStripMenuItem("Exécuter"); Add(runMenu, "Lancer le fichier", async (_, _) => await RunCurrent(), Keys.F5);
         menu.Items.AddRange([fileMenu, editMenu, runMenu]); MainMenuStrip = menu;
 
@@ -261,6 +263,38 @@ public sealed class Form1 : Form
         var index = editor.Text.IndexOf(term, editor.SelectionStart + editor.SelectionLength, StringComparison.CurrentCultureIgnoreCase);
         if (index < 0) index = editor.Text.IndexOf(term, StringComparison.CurrentCultureIgnoreCase);
         if (index >= 0) { editor.Select(index, term.Length); editor.Focus(); } else status.Text = "Aucun résultat";
+    }
+
+    private void SearchInFiles()
+    {
+        var root = workspace ?? (PathOf() is { } file ? Path.GetDirectoryName(file) : null);
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            MessageBox.Show(this, "Ouvrez un dossier ou un fichier avant de rechercher dans les fichiers.", "Recherche", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var query = Microsoft.VisualBasic.Interaction.InputBox("Texte à rechercher dans le projet :", "Rechercher dans les fichiers");
+        if (string.IsNullOrEmpty(query)) return;
+
+        try
+        {
+            var results = searchService.Search(root, query);
+            output.Clear();
+            if (results.Count == 0)
+            {
+                output.Text = $"Aucun résultat pour « {query} ».";
+                status.Text = "Recherche terminée : aucun résultat.";
+                return;
+            }
+
+            foreach (var result in results) output.AppendText($"{result.FilePath}({result.Line},{result.Column}) : {result.Text.Trim()}\r\n");
+            status.Text = $"Recherche terminée : {results.Count} résultat(s).";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Erreur de recherche", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     private void AnalyzeCurrent()
