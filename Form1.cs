@@ -86,6 +86,7 @@ public sealed class Form1 : Form
         Add(editMenu, "Formater le document", (_, _) => FormatCurrent(), Keys.Control | Keys.Shift | Keys.I);
         Add(editMenu, "Rechercher dans les fichiers…", (_, _) => SearchInFiles(), Keys.Control | Keys.Shift | Keys.F);
         var viewMenu = new ToolStripMenuItem("Affichage");
+        Add(viewMenu, "Palette de commandes…", (_, _) => ShowCommandPalette(), Keys.Control | Keys.Shift | Keys.P);
         Add(viewMenu, "Thème sombre", (_, _) => SetTheme("Dark"));
         Add(viewMenu, "Thème clair", (_, _) => SetTheme("Light"));
         Add(viewMenu, "Augmenter la taille du texte", (_, _) => AdjustEditorFontSize(1));
@@ -382,6 +383,37 @@ public sealed class Form1 : Form
         };
         item.Click += (_, _) => action();
         bar.Items.Add(item);
+    }
+
+    private void ShowCommandPalette()
+    {
+        var commands = new List<(string Label, Action Action)>
+        {
+            ("Fichier : Nouveau", NewFile),
+            ("Fichier : Ouvrir", OpenFile),
+            ("Fichier : Enregistrer", SaveCurrent),
+            ("Fichier : Enregistrer sous", SaveAs),
+            ("Fichier : Fermer l’onglet", CloseCurrent),
+            ("Édition : Annuler", () => Editor()?.Undo()),
+            ("Édition : Rétablir", () => Editor()?.Redo()),
+            ("Édition : Rechercher", FindText),
+            ("Édition : Remplacer", ReplaceText),
+            ("Édition : Aller à la ligne", GoToLine),
+            ("Édition : Formater le document", FormatCurrent),
+            ("Projet : Compiler", CompileProject),
+            ("Projet : Exécuter", RunProject),
+            ("Projet : Lancer les tests", async () => await RunTestsAsync()),
+            ("Projet : Analyser le code", AnalyzeCurrent),
+            ("Débogage : Ajouter/retirer un point d’arrêt", ToggleBreakpoint),
+            ("Débogage : Démarrer", async () => await StartDebuggingAsync()),
+            ("Débogage : Arrêter", async () => await StopDebuggingAsync()),
+            ("Git : Actualiser", async () => await RefreshGitStatusAsync()),
+            ("IA : Ouvrir l’assistant", () => SelectBottomTab("Assistant IA")),
+            ("Extensions : Actualiser", RefreshExtensions)
+        };
+        commands.AddRange(extensionService.Commands.Select(command => ($"Extension : {command.Label}", command.Action)));
+        using var palette = new CommandPaletteForm(commands);
+        palette.ShowDialog(this);
     }
     private CodeEditorSurface? Editor() => EditorOf(tabs.SelectedTab);
     private static CodeEditorSurface? EditorOf(TabPage? page) => page?.Controls.OfType<CodeEditorSurface>().FirstOrDefault();
