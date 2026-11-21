@@ -69,6 +69,10 @@ public sealed class Form1 : Form
         Add(viewMenu, "Thème clair", (_, _) => SetTheme("Light"));
         Add(viewMenu, "Augmenter la taille du texte", (_, _) => AdjustEditorFontSize(1));
         Add(viewMenu, "Réduire la taille du texte", (_, _) => AdjustEditorFontSize(-1));
+        Add(viewMenu, "Activer/désactiver le retour à la ligne", (_, _) => ToggleWordWrap());
+        Add(viewMenu, "Tabulations : 2 espaces", (_, _) => SetTabSize(2));
+        Add(viewMenu, "Tabulations : 4 espaces", (_, _) => SetTabSize(4));
+        Add(viewMenu, "Tabulations : 8 espaces", (_, _) => SetTabSize(8));
         var runMenu = new ToolStripMenuItem("Exécuter"); Add(runMenu, "Lancer le fichier", async (_, _) => await RunCurrent(), Keys.F5);
         var helpMenu = new ToolStripMenuItem("Aide");
         Add(helpMenu, "Raccourcis clavier", (_, _) => ShowShortcuts());
@@ -241,6 +245,24 @@ public sealed class Form1 : Form
         foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
             ApplyEditorSettings(surface);
         status.Text = $"Taille du texte : {settings.EditorFontSize:0} pt";
+    }
+
+    private void ToggleWordWrap()
+    {
+        settings.WordWrap = !settings.WordWrap;
+        settingsService.Save(settings);
+        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
+            ApplyEditorSettings(surface);
+        status.Text = settings.WordWrap ? "Retour à la ligne activé." : "Retour à la ligne désactivé.";
+    }
+
+    private void SetTabSize(int size)
+    {
+        settings.TabSize = size;
+        settingsService.Save(settings);
+        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
+            ApplyEditorSettings(surface);
+        status.Text = $"Tabulations : {size} espaces.";
     }
 
     private void ShowShortcuts()
