@@ -16,4 +16,22 @@ public sealed class CodeRenameServiceTests
         Assert.Contains("// value", result.Text, StringComparison.Ordinal);
         Assert.Contains("\"value\"", result.Text, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Rename_RejectsInvalidIdentifier()
+    {
+        var service = new CodeRenameService();
+
+        Assert.Throws<ArgumentException>(() => service.Rename("class Demo { }", 6, "not-valid"));
+    }
+
+    [Fact]
+    public void Rename_ReturnsNullWhenCaretIsNotOnAnIdentifier()
+    {
+        var source = "class Demo { }";
+
+        var result = new CodeRenameService().Rename(source, source.IndexOf('{'), "Other");
+
+        Assert.Null(result);
+    }
 }
