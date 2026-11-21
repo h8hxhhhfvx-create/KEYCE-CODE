@@ -51,6 +51,8 @@ public sealed class Form1 : Form
         BuildLayout();
         output.MouseDoubleClick += Output_MouseDoubleClick;
         outputViewModel.DiagnosticActivated += OpenDiagnostic;
+        debuggerService.OutputReceived += DebuggerOutputReceived;
+        debuggerService.SnapshotUpdated += DebuggerSnapshotUpdated;
         FormClosing += (_, e) => { if (tabs.TabPages.Cast<TabPage>().Any(t => !CanClose(t))) e.Cancel = true; };
         FormClosed += async (_, _) => { liveAnalysisCancellation?.Cancel(); outputViewModel.Stop(); terminalViewModel.Stop(); await debuggerService.DisposeAsync(); };
     }
@@ -533,8 +535,6 @@ public sealed class Form1 : Form
                 .Where(file => !file.Contains(Path.DirectorySeparatorChar + "ref" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault()
                 ?? throw new FileNotFoundException("Assembly compilée introuvable.");
-            debuggerService.OutputReceived += DebuggerOutputReceived;
-            debuggerService.SnapshotUpdated += DebuggerSnapshotUpdated;
             await debuggerService.StartAsync(dll, directory, debugBreakpoints);
             status.Text = $"Débogage démarré ({debugBreakpoints.Count} point(s) d’arrêt).";
         }
@@ -972,7 +972,12 @@ public sealed class Form1 : Form
     }
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
-        if (keyData == Keys.F5) { _ = RunCurrent(); return true; }
+        if (keyData == Keys.F5)
+        {
+            if (debuggerService.IsRunning) _ = ContinueDebuggingAsync();
+            else _ = RunCurrent();
+            return true;
+        }
         if (keyData == (Keys.Control | Keys.Oemplus) || keyData == (Keys.Control | Keys.Add)) { AdjustEditorFontSize(1); return true; }
         if (keyData == (Keys.Control | Keys.OemMinus) || keyData == (Keys.Control | Keys.Subtract)) { AdjustEditorFontSize(-1); return true; }
         if (keyData == (Keys.Control | Keys.D0) || keyData == (Keys.Control | Keys.NumPad0))
