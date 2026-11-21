@@ -12,6 +12,8 @@ public sealed class Form1 : Form
     private readonly TabControl tabs = new() { Dock = DockStyle.Fill, Appearance = TabAppearance.Normal };
     private readonly ExplorerView explorer = new(new ProjectViewModel(new FileService(), new ProjectService()));
     private readonly FileService fileService = new();
+    private readonly CodeAnalysisService codeAnalysisService = new();
+    private readonly List<(int Start, int End, int Line, int Column)> diagnosticRanges = new();
     private readonly RichTextBox output = new() { Dock = DockStyle.Fill, ReadOnly = true, BackColor = Color.FromArgb(20, 22, 27), ForeColor = Color.Gainsboro, BorderStyle = BorderStyle.None, Font = new Font("Cascadia Mono", 10) };
     private readonly ToolStripStatusLabel status = new("Prêt") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
     private string? workspace;
@@ -21,6 +23,7 @@ public sealed class Form1 : Form
         Text = "KeyceCode"; Width = 1280; Height = 800; MinimumSize = new Size(900, 600);
         BackColor = Color.FromArgb(37, 40, 48); ForeColor = Color.Gainsboro; StartPosition = FormStartPosition.CenterScreen;
         BuildLayout();
+        output.MouseDoubleClick += Output_MouseDoubleClick;
         FormClosing += (_, e) => { if (tabs.TabPages.Cast<TabPage>().Any(t => !CanClose(t))) e.Cancel = true; };
     }
 
@@ -51,6 +54,10 @@ public sealed class Form1 : Form
         var bar = new ToolStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, GripStyle = ToolStripGripStyle.Hidden, Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
         Button(bar, "＋ Nouveau", () => NewFile()); Button(bar, "Ouvrir", OpenFile); Button(bar, "Projet C#", OpenProject); Button(bar, "Dossier", OpenWorkspace); Button(bar, "Enregistrer", SaveCurrent);
         bar.Items.Add(new ToolStripSeparator()); Button(bar, "▶ Exécuter (F5)", async () => await RunCurrent());
+        Button(bar, "🔍 Analyser", () =>
+{
+    AnalyzeCurrent();
+});
 
         var split = new SplitContainer { Size = new Size(1200, 700), Dock = DockStyle.Fill, SplitterDistance = 260, BackColor = Color.FromArgb(37, 40, 48), Panel1MinSize = 180, Panel2MinSize = 400 };
         split.Panel1.Controls.Add(explorer);
@@ -192,7 +199,116 @@ public sealed class Form1 : Form
         if (index < 0) index = editor.Text.IndexOf(term, StringComparison.CurrentCultureIgnoreCase);
         if (index >= 0) { editor.Select(index, term.Length); editor.Focus(); } else status.Text = "Aucun résultat";
     }
+
+private void AnalyzeCurrent()
+{
+    // Récupérer l'éditeur actif
+    var editor = Editor();
+
+    if (editor is null)
+    {
+        MessageBox.Show("Aucun éditeur ouvert.");
+        return;
+    }
+
+    try
+    {
+        // Analyser le code écrit
+        var diagnostics = codeAnalysisService.Analyze(editor.Text);
+
+        // Effacer les anciens résultats et leurs positions
+        output.Clear();
+        diagnosticRanges.Clear();
+
+        // Vérifier si des problèmes ont été trouvés
+        if (diagnostics.Count == 0)
+        {
+            output.Text = "Aucune erreur ni aucun avertissement détecté.";
+            status.Text = "Analyse terminée.";
+            return;
+        }
+
+        // Afficher chaque erreur et mémoriser sa position dans la sortie
+        foreach (var diagnostic in diagnostics)
+        {
+            int start = output.TextLength;
+
+            string message =
+                $"{diagnostic.Severity} | {diagnostic.Code} | " +
+                $"Ligne {diagnostic.Line}, Colonne {diagnostic.Column}\r\n" +
+                $"{diagnostic.Message}\r\n\r\n";
+
+            output.AppendText(message);
+
+            diagnosticRanges.Add((
+                start,
+                output.TextLength,
+                diagnostic.Line,
+                diagnostic.Column
+            ));
+        }
+
+        status.Text = $"Analyse terminée : {diagnostics.Count} problème(s).";
+    }
+    catch (Exception ex)
+    {
+        MessageBox.Show(
+            this,
+            ex.Message,
+            "Erreur d'analyse",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Error
+        );
+    }
+}
+
+
+    // Naviguer vers le code correspondant lorsqu'on double-clique sur un diagnostic.
+    private void Output_MouseDoubleClick(object? sender, MouseEventArgs e)
+    {
+        int index = output.GetCharIndexFromPosition(e.Location);
+
+        var diagnostic = diagnosticRanges.FirstOrDefault(
+            d => index >= d.Start && index < d.End
+        );
+
+        // Les numéros de ligne commencent à 1 : 0 indique qu'aucun diagnostic n'a été trouvé.
+        if (diagnostic.Line == 0)
+            return;
+
+        var editor = Editor();
+        if (editor is null || editor.Lines.Length == 0)
+            return;
+
+        int lineIndex = Math.Clamp(
+            diagnostic.Line - 1,
+            0,
+            editor.Lines.Length - 1
+        );
+
+        int lineStart = editor.GetFirstCharIndexFromLine(lineIndex);
+        if (lineStart < 0)
+            return;
+
+        int position = Math.Min(
+            lineStart + diagnostic.Column - 1,
+            editor.TextLength
+        );
+
+        // Surligner la ligne qui contient le diagnostic.
+        var surface = tabs.SelectedTab?.Controls.OfType<CodeEditorSurface>().FirstOrDefault();
+        surface?.HighlightLine(diagnostic.Line);
+
+        editor.SelectionStart = position;
+        editor.SelectionLength = 0;
+        editor.ScrollToCaret();
+        editor.Focus();
+
+        status.Text = $"Erreur surlignée : ligne {diagnostic.Line}, colonne {diagnostic.Column}";
+    }
+
     private async Task RunCurrent()
+    
     {
         var editor = Editor(); if (editor is null) return;
         if (PathOf() is null) { SaveCurrent(); if (PathOf() is null) return; }
@@ -259,6 +375,54 @@ internal sealed class CodeEditorSurface : UserControl
     }
 
     public void RefreshColors() => ApplyCSharpColors();
+
+    // Surligne une ligne sans modifier le texte ni les couleurs du code.
+    public void HighlightLine(int lineNumber)
+    {
+        if (lineNumber < 1 || lineNumber > Editor.Lines.Length)
+            return;
+
+        int oldSelectionStart = Editor.SelectionStart;
+        int oldSelectionLength = Editor.SelectionLength;
+        bool wasModified = Editor.Modified;
+
+        Color normalBackground = Color.FromArgb(30, 33, 40);
+        Color highlightBackground = Color.FromArgb(75, 85, 105);
+
+        Editor.SuspendLayout();
+
+        // Effacer l'ancien surlignage.
+        Editor.SelectAll();
+        Editor.SelectionBackColor = normalBackground;
+
+        int lineIndex = lineNumber - 1;
+        int lineStart = Editor.GetFirstCharIndexFromLine(lineIndex);
+
+        if (lineStart >= 0)
+        {
+            int lineLength = Editor.Lines[lineIndex].Length;
+            if (lineLength == 0 && lineStart < Editor.TextLength)
+                lineLength = 1;
+
+            lineLength = Math.Min(lineLength, Editor.TextLength - lineStart);
+
+            if (lineLength > 0)
+            {
+                Editor.Select(lineStart, lineLength);
+                Editor.SelectionBackColor = highlightBackground;
+            }
+        }
+
+        // Restaurer la sélection de l'utilisateur et l'état du document.
+        Editor.Select(
+            Math.Min(oldSelectionStart, Editor.TextLength),
+            Math.Min(oldSelectionLength, Math.Max(0, Editor.TextLength - oldSelectionStart))
+        );
+        Editor.SelectionBackColor = normalBackground;
+        Editor.Modified = wasModified;
+        Editor.ResumeLayout();
+        Editor.Invalidate();
+    }
 
     private void PaintLineNumbers(object? sender, PaintEventArgs e)
     {
