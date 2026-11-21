@@ -33,7 +33,9 @@ WPF (AvalonEdit, terminal, compilation et assistant) sont hébergées avec
 - auto-complétion C# (`Ctrl+Espace`) ;
 - recherche, remplacement, navigation vers une ligne et recherche dans les
   fichiers ;
-- formatage C# avec Roslyn ;
+- navigation vers les symboles (`Ctrl+Maj+O`), vers la définition (`F12`) et
+  renommage contrôlé (`F2`) ;
+- formatage C# avec Roslyn en respectant la taille de tabulation choisie ;
 - analyse en direct et diagnostics avec ligne, colonne et code d’erreur ;
 - thèmes clair/sombre, retour à la ligne, taille de police et tabulations.
 
