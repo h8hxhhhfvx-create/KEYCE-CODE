@@ -590,12 +590,14 @@ public sealed class Form1 : Form
             menuStrip.BackColor = chrome;
             menuStrip.ForeColor = text;
             menuStrip.Renderer = new ToolStripProfessionalRenderer(dark ? new DarkColors() : new LightColors());
+            ApplyToolStripColors(menuStrip, chrome, text);
         }
         if (toolBar is not null)
         {
             toolBar.BackColor = chrome;
             toolBar.ForeColor = text;
             toolBar.Renderer = new ToolStripProfessionalRenderer(dark ? new DarkColors() : new LightColors());
+            ApplyToolStripColors(toolBar, chrome, text);
         }
         if (statusStrip is not null)
         {
@@ -649,6 +651,17 @@ public sealed class Form1 : Form
             if (child is Panel or TabControl or TabPage or SplitContainer) child.BackColor = surface;
             child.ForeColor = text;
             if (child.HasChildren) ApplyWinFormsColors(child, surface, text);
+        }
+    }
+
+    private static void ApplyToolStripColors(ToolStrip strip, Color background, Color text)
+    {
+        foreach (ToolStripItem item in strip.Items)
+        {
+            item.ForeColor = text;
+            item.BackColor = background;
+            if (item is ToolStripDropDownItem dropDown)
+                ApplyToolStripColors(dropDown.DropDown, background, text);
         }
     }
 
