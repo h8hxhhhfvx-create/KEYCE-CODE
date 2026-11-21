@@ -22,6 +22,9 @@ public sealed class Form1 : Form
     private readonly OutputViewModel outputViewModel = new();
     private readonly TerminalViewModel terminalViewModel = new();
     private TabControl? bottomTabs;
+    private MenuStrip? menuStrip;
+    private ToolStrip? toolBar;
+    private StatusStrip? statusStrip;
     private readonly RichTextBox output = new() { Dock = DockStyle.Fill, ReadOnly = true, BackColor = Color.FromArgb(20, 22, 27), ForeColor = Color.Gainsboro, BorderStyle = BorderStyle.None, Font = new Font("Cascadia Mono", 10) };
     private readonly ToolStripStatusLabel status = new("Prêt") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
     private string? workspace;
@@ -40,6 +43,7 @@ public sealed class Form1 : Form
     private void BuildLayout()
     {
         var menu = new MenuStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, Font = new Font("Segoe UI", 9F), Padding = new Padding(6, 3, 6, 3), Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
+        menuStrip = menu;
         var fileMenu = new ToolStripMenuItem("Fichier");
         Add(fileMenu, "Nouveau", (_, _) => NewFile(), Keys.Control | Keys.N);
         Add(fileMenu, "Ouvrir…", (_, _) => OpenFile(), Keys.Control | Keys.O);
@@ -68,6 +72,7 @@ public sealed class Form1 : Form
         menu.Items.AddRange([fileMenu, editMenu, viewMenu, runMenu]); MainMenuStrip = menu;
 
         var bar = new ToolStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, GripStyle = ToolStripGripStyle.Hidden, Padding = new Padding(6, 3, 6, 3), Height = 34, Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
+        toolBar = bar;
         Button(bar, "＋ Nouveau", () => NewFile()); Button(bar, "Ouvrir", OpenFile); Button(bar, "Projet C#", OpenProject); Button(bar, "Dossier", OpenWorkspace); Button(bar, "Enregistrer", SaveCurrent);
         bar.Items.Add(new ToolStripSeparator()); Button(bar, "▶ Exécuter (F5)", async () => await RunCurrent());
         Button(bar, "🔨 Compiler", CompileProject); Button(bar, "▶ Projet", RunProject);
@@ -95,8 +100,10 @@ public sealed class Form1 : Form
         bottomTabs.TabPages.Add(CreateWpfTab("Terminal", new TerminalView { DataContext = terminalViewModel }));
         editorOutput.Panel2.Controls.Add(bottomTabs); split.Panel2.Controls.Add(editorOutput);
         var strip = new StatusStrip { BackColor = Color.FromArgb(0, 104, 156), ForeColor = Color.White, Font = new Font("Segoe UI", 9F) }; strip.Items.Add(status);
+        statusStrip = strip;
         Controls.Add(split); Controls.Add(bar); Controls.Add(menu); Controls.Add(strip);
         bar.Dock = DockStyle.Top; menu.Dock = DockStyle.Top; strip.Dock = DockStyle.Bottom;
+        ApplyChromeTheme();
         NewFile();
     }
 
@@ -173,9 +180,53 @@ public sealed class Form1 : Form
     {
         settings.Theme = theme;
         settingsService.Save(settings);
+        ApplyChromeTheme();
         foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
             ApplyEditorSettings(surface);
         status.Text = $"Thème {theme switch { "Dark" => "sombre", _ => "clair" }} activé.";
+    }
+
+    private void ApplyChromeTheme()
+    {
+        var dark = !string.Equals(settings.Theme, "Light", StringComparison.OrdinalIgnoreCase);
+        var chrome = dark ? Color.FromArgb(30, 33, 40) : Color.FromArgb(232, 235, 240);
+        var surface = dark ? Color.FromArgb(37, 40, 48) : Color.FromArgb(248, 249, 251);
+        var text = dark ? Color.Gainsboro : Color.FromArgb(32, 35, 40);
+
+        BackColor = surface;
+        ForeColor = text;
+        if (menuStrip is not null)
+        {
+            menuStrip.BackColor = chrome;
+            menuStrip.ForeColor = text;
+            menuStrip.Renderer = new ToolStripProfessionalRenderer(dark ? new DarkColors() : new LightColors());
+        }
+        if (toolBar is not null)
+        {
+            toolBar.BackColor = chrome;
+            toolBar.ForeColor = text;
+            toolBar.Renderer = new ToolStripProfessionalRenderer(dark ? new DarkColors() : new LightColors());
+        }
+        if (statusStrip is not null)
+        {
+            statusStrip.BackColor = dark ? Color.FromArgb(0, 104, 156) : Color.FromArgb(30, 120, 175);
+            statusStrip.ForeColor = Color.White;
+        }
+
+        ApplyWinFormsColors(this, surface, text);
+        output.BackColor = dark ? Color.FromArgb(20, 22, 27) : Color.White;
+        output.ForeColor = dark ? Color.Gainsboro : Color.FromArgb(32, 35, 40);
+    }
+
+    private static void ApplyWinFormsColors(Control parent, Color surface, Color text)
+    {
+        foreach (Control child in parent.Controls)
+        {
+            if (child is MenuStrip or ToolStrip or StatusStrip) continue;
+            if (child is Panel or TabControl or TabPage or SplitContainer) child.BackColor = surface;
+            child.ForeColor = text;
+            if (child.HasChildren) ApplyWinFormsColors(child, surface, text);
+        }
     }
 
     private void AdjustEditorFontSize(double amount)
@@ -455,5 +506,19 @@ public sealed class Form1 : Form
         public override Color ImageMarginGradientBegin => Color.FromArgb(30, 33, 40); public override Color ImageMarginGradientMiddle => Color.FromArgb(30, 33, 40);
         public override Color ImageMarginGradientEnd => Color.FromArgb(30, 33, 40); public override Color ToolStripGradientBegin => Color.FromArgb(30, 33, 40);
         public override Color ToolStripGradientMiddle => Color.FromArgb(30, 33, 40); public override Color ToolStripGradientEnd => Color.FromArgb(30, 33, 40);
+    }
+
+    private sealed class LightColors : ProfessionalColorTable
+    {
+        public override Color MenuBorder => Color.FromArgb(190, 196, 205);
+        public override Color MenuItemSelected => Color.FromArgb(214, 228, 244);
+        public override Color MenuItemBorder => Color.FromArgb(170, 182, 198);
+        public override Color ToolStripDropDownBackground => Color.FromArgb(248, 249, 251);
+        public override Color ImageMarginGradientBegin => Color.FromArgb(232, 235, 240);
+        public override Color ImageMarginGradientMiddle => Color.FromArgb(232, 235, 240);
+        public override Color ImageMarginGradientEnd => Color.FromArgb(232, 235, 240);
+        public override Color ToolStripGradientBegin => Color.FromArgb(232, 235, 240);
+        public override Color ToolStripGradientMiddle => Color.FromArgb(232, 235, 240);
+        public override Color ToolStripGradientEnd => Color.FromArgb(232, 235, 240);
     }
 }
