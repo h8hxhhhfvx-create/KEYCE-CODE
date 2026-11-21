@@ -19,12 +19,14 @@ public sealed class Form1 : Form
     private readonly CodeAnalysisService codeAnalysisService = new();
     private readonly FormatService formatService = new();
     private readonly SearchService searchService = new();
+    private readonly AiAgentService aiAgentService = new();
     private GitService? gitService;
     private readonly List<(int Start, int End, int Line, int Column)> diagnosticRanges = new();
     private readonly List<(int Start, int End, string FilePath, int Line, int Column)> searchRanges = new();
     private readonly OutputViewModel outputViewModel = new();
     private readonly TerminalViewModel terminalViewModel = new();
     private AiChatViewModel? aiChatViewModel;
+    private AiChatView? aiChatView;
     private TabControl? bottomTabs;
     private MenuStrip? menuStrip;
     private ToolStrip? toolBar;
@@ -88,10 +90,12 @@ public sealed class Form1 : Form
         Add(gitMenu, "Créer un commit…", async (_, _) => await CommitChangesAsync());
         Add(gitMenu, "Tirer les changements", async (_, _) => await PullGitAsync());
         Add(gitMenu, "Envoyer les changements", async (_, _) => await PushGitAsync());
+        var aiMenu = new ToolStripMenuItem("IA");
+        Add(aiMenu, "Agent : proposer une modification…", async (_, _) => await GenerateAgentPlanAsync());
         var helpMenu = new ToolStripMenuItem("Aide");
         Add(helpMenu, "Raccourcis clavier", (_, _) => ShowShortcuts());
         Add(helpMenu, "À propos de KEYCE CODE", (_, _) => ShowAbout());
-        menu.Items.AddRange([fileMenu, editMenu, viewMenu, runMenu, gitMenu, helpMenu]); MainMenuStrip = menu;
+        menu.Items.AddRange([fileMenu, editMenu, viewMenu, runMenu, gitMenu, aiMenu, helpMenu]); MainMenuStrip = menu;
 
         var bar = new ToolStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, GripStyle = ToolStripGripStyle.Hidden, Padding = new Padding(6, 3, 6, 3), Height = 34, Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
         toolBar = bar;
@@ -120,7 +124,8 @@ public sealed class Form1 : Form
         bottomTabs.TabPages.Add(new TabPage("Sortie") { Controls = { outputPanel } });
         bottomTabs.TabPages.Add(CreateWpfTab("Compilation", new OutputView { DataContext = outputViewModel }));
         bottomTabs.TabPages.Add(CreateWpfTab("Terminal", new TerminalView { DataContext = terminalViewModel }));
-        bottomTabs.TabPages.Add(CreateWpfTab("Assistant IA", new AiChatView { DataContext = aiChatViewModel }));
+        aiChatView = new AiChatView { DataContext = aiChatViewModel };
+        bottomTabs.TabPages.Add(CreateWpfTab("Assistant IA", aiChatView));
         editorOutput.Panel2.Controls.Add(bottomTabs); split.Panel2.Controls.Add(editorOutput);
         var strip = new StatusStrip { BackColor = Color.FromArgb(0, 104, 156), ForeColor = Color.White, Font = new Font("Segoe UI", 9F) }; strip.Items.Add(status);
         strip.Items.Add(cursorStatus);
@@ -189,6 +194,56 @@ public sealed class Form1 : Form
         if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
         try { await gitService.PushAsync(); await RefreshGitStatusAsync(); }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task GenerateAgentPlanAsync()
+    {
+        var root = workspace ?? (PathOf() is { } file ? Path.GetDirectoryName(file) : null);
+        if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+        {
+            MessageBox.Show(this, "Ouvrez un dossier ou un projet avant d’utiliser l’agent.", "Agent IA", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var instruction = Microsoft.VisualBasic.Interaction.InputBox(
+            "Décrivez la modification souhaitée. L’agent proposera un aperçu avant toute écriture :",
+            "Agent IA — nouvelle proposition");
+        if (string.IsNullOrWhiteSpace(instruction)) return;
+
+        try
+        {
+            status.Text = "Agent IA : génération de la proposition…";
+            var plan = await aiAgentService.GeneratePlanAsync(
+                settings.OllamaEndpoint,
+                settings.OllamaModel,
+                root,
+                instruction,
+                Editor()?.Text);
+            SelectBottomTab("Sortie");
+            output.Clear();
+            output.AppendText("PROPOSITION DE L’AGENT IA\r\n\r\n");
+            foreach (var change in plan)
+            {
+                output.AppendText($"Fichier : {change.RelativePath} ({(change.ExistingContent is null ? "création" : "modification")})\r\n");
+                output.AppendText(change.Content + "\r\n\r\n");
+            }
+
+            var answer = MessageBox.Show(
+                this,
+                $"L’agent propose {plan.Count} fichier(s). Voulez-vous appliquer ces modifications ?\n\nUn aperçu est affiché dans le panneau Sortie.",
+                "Agent IA — confirmation obligatoire",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+            if (answer != DialogResult.Yes) { status.Text = "Proposition de l’agent refusée."; return; }
+            await aiAgentService.ApplyPlanAsync(root, plan);
+            explorer.RefreshProject();
+            status.Text = $"Agent IA : {plan.Count} fichier(s) modifié(s).";
+        }
+        catch (Exception ex)
+        {
+            status.Text = "Agent IA : échec.";
+            MessageBox.Show(this, ex.Message, "Agent IA", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     private static void Add(ToolStripMenuItem parent, string label, EventHandler action, Keys shortcut = Keys.None)
@@ -296,6 +351,7 @@ public sealed class Form1 : Form
 
         ApplyWinFormsColors(this, surface, text);
         explorer.ApplyTheme(dark);
+        aiChatView?.ApplyTheme(dark);
         output.BackColor = dark ? Color.FromArgb(20, 22, 27) : Color.White;
         output.ForeColor = dark ? Color.Gainsboro : Color.FromArgb(32, 35, 40);
     }
