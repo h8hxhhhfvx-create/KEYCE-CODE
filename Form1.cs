@@ -24,6 +24,7 @@ public sealed class Form1 : Form
     private GitService? gitService;
     private readonly List<(int Start, int End, int Line, int Column)> diagnosticRanges = new();
     private readonly List<(int Start, int End, string FilePath, int Line, int Column)> searchRanges = new();
+    private CancellationTokenSource? liveAnalysisCancellation;
     private readonly OutputViewModel outputViewModel = new();
     private readonly TerminalViewModel terminalViewModel = new();
     private IReadOnlyList<AgentChange>? lastAgentPlan;
@@ -48,7 +49,7 @@ public sealed class Form1 : Form
         output.MouseDoubleClick += Output_MouseDoubleClick;
         outputViewModel.DiagnosticActivated += OpenDiagnostic;
         FormClosing += (_, e) => { if (tabs.TabPages.Cast<TabPage>().Any(t => !CanClose(t))) e.Cancel = true; };
-        FormClosed += (_, _) => { outputViewModel.Stop(); terminalViewModel.Stop(); };
+        FormClosed += (_, _) => { liveAnalysisCancellation?.Cancel(); outputViewModel.Stop(); terminalViewModel.Stop(); };
     }
 
     private void BuildLayout()
@@ -526,6 +527,36 @@ public sealed class Form1 : Form
         UpdateTitle(page);
         if (ReferenceEquals(page, tabs.SelectedTab) && aiChatViewModel is not null)
             aiChatViewModel.ContextText = editor.Text;
+        ScheduleLiveAnalysis(editor);
+    }
+
+    private void ScheduleLiveAnalysis(CodeEditorSurface editor)
+    {
+        var extension = Path.GetExtension(PathOf() ?? ".cs");
+        if (!string.IsNullOrEmpty(extension) && !string.Equals(extension, ".cs", StringComparison.OrdinalIgnoreCase)) return;
+        liveAnalysisCancellation?.Cancel();
+        var cancellation = new CancellationTokenSource();
+        liveAnalysisCancellation = cancellation;
+        _ = AnalyzeAfterPauseAsync(editor, cancellation.Token);
+    }
+
+    private async Task AnalyzeAfterPauseAsync(CodeEditorSurface editor, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(650, cancellationToken);
+            var diagnostics = await Task.Run(() => codeAnalysisService.Analyze(editor.Text), cancellationToken);
+            if (cancellationToken.IsCancellationRequested || !ReferenceEquals(editor, Editor())) return;
+            BeginInvoke(() =>
+            {
+                if (!cancellationToken.IsCancellationRequested && ReferenceEquals(editor, Editor()))
+                    status.Text = diagnostics.Count == 0
+                        ? "Analyse en direct : aucune erreur détectée."
+                        : $"Analyse en direct : {diagnostics.Count} problème(s). Utilisez Analyser pour le détail.";
+            });
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception) { /* L’analyse manuelle reste disponible si le code est momentanément incomplet. */ }
     }
 
     private void UpdateAiContext()
