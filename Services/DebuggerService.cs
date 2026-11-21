@@ -65,45 +65,60 @@ public sealed class DebuggerService : IAsyncDisposable
         configurationCompleted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _ = ReadMessagesAsync(adapter.StandardOutput.BaseStream, cancellationToken);
         _ = ReadErrorsAsync(adapter.StandardError, cancellationToken);
-
-        await SendAsync("initialize", new { clientID = "keyce-code", clientName = "KEYCE CODE", adapterID = "coreclr", linesStartAt1 = true, columnsStartAt1 = true, pathFormat = "path" });
-        await initializeCompleted.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
-        await SendAsync("launch", new
+        try
         {
-            program,
-            cwd = workingDirectory,
-            stopAtEntry = false,
-            justMyCode = false,
-            requireExactSource = false,
-            console = "internalConsole",
-            symbolOptions = new
+            await SendAsync("initialize", new { clientID = "keyce-code", clientName = "KEYCE CODE", adapterID = "coreclr", linesStartAt1 = true, columnsStartAt1 = true, pathFormat = "path" });
+            await initializeCompleted.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+            await SendAsync("launch", new
             {
-                searchPaths = new[] { Path.GetDirectoryName(program) ?? workingDirectory },
-                searchMicrosoftSymbolServer = false
-            }
-        });
-        await handshakeCompleted.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
-        await initializedEvent.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
-        await SendBreakpointsAsync(breakpoints);
-        await SendAsync("configurationDone", new { });
-        await configurationCompleted.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+                program,
+                cwd = workingDirectory,
+                stopAtEntry = false,
+                justMyCode = false,
+                requireExactSource = false,
+                console = "internalConsole",
+                symbolOptions = new
+                {
+                    searchPaths = new[] { Path.GetDirectoryName(program) ?? workingDirectory },
+                    searchMicrosoftSymbolServer = false
+                }
+            });
+            await handshakeCompleted.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+            await initializedEvent.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+            await SendBreakpointsAsync(breakpoints);
+            await SendAsync("configurationDone", new { });
+            await configurationCompleted.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+        }
+        catch
+        {
+            await StopAsync();
+            throw;
+        }
     }
 
     public async Task StopAsync()
     {
-        if (!IsRunning) return;
+        var current = adapter;
+        if (current is null) return;
         try { await SendAsync("disconnect", new { terminateDebuggee = true, restart = false }); }
         catch { }
         try
         {
-            if (adapter is not null)
-                await adapter.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3));
+            if (!current.HasExited)
+                await current.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3));
         }
         catch (TimeoutException)
         {
-            try { adapter?.Kill(entireProcessTree: true); } catch { }
+            try { current.Kill(entireProcessTree: true); } catch { }
         }
         catch (InvalidOperationException) { }
+        finally
+        {
+            input?.Dispose();
+            input = null;
+            current.Dispose();
+            if (ReferenceEquals(adapter, current)) adapter = null;
+        }
     }
 
     public Task ContinueAsync() => SendAsync("continue", new { threadId = stoppedThreadId });
