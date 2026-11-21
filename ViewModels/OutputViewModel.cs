@@ -88,27 +88,53 @@ public sealed class OutputViewModel : ViewModelBase
         if (IsBusy) _compiler.Stop();
     }
 
-    private async Task RunOperationAsync(bool run)
+    /// <summary>
+    /// Lance un fichier qui n'est pas du C# (python, node, powershell, cmd...) dans cette même console :
+    /// sortie en direct, saisie clavier et bouton Arrêter fonctionnent comme pour un programme C#.
+    /// </summary>
+    public Task RunToolAsync(string fileName, string arguments, string workingDirectory, string? title = null) =>
+        ExecuteAsync(
+            $"▶ Exécution : {title ?? $"{fileName} {arguments}"}",
+            "Exécution en cours…",
+            run: true,
+            () => _compiler.RunToolAsync(fileName, arguments, workingDirectory));
+
+    private Task RunOperationAsync(bool run)
     {
         if (string.IsNullOrWhiteSpace(ProjectPath))
         {
             Log.AppendLine("Aucun projet ouvert : ouvrez un dossier contenant un .csproj ou un fichier .cs.", OutputKind.Error);
+            return Task.CompletedTask;
+        }
+
+        string path = ProjectPath;
+        return ExecuteAsync(
+            run ? $"▶ Exécution : {path}" : $"🔨 Compilation : {path}",
+            run ? "Exécution en cours…" : "Compilation en cours…",
+            run,
+            () => run ? _compiler.RunAsync(path) : _compiler.BuildAsync(path));
+    }
+
+    private async Task ExecuteAsync(string header, string runningStatus, bool run, Func<Task<ExecutionResult>> action)
+    {
+        if (IsBusy)
+        {
+            Log.AppendLine("Une opération est déjà en cours : arrêtez-la d'abord.", OutputKind.Error);
             return;
         }
 
-        SaveAllRequested?.Invoke();
-
-        Log.Clear();
-        Diagnostics.Clear();
         IsBusy = true;
-        Status = run ? "Exécution en cours…" : "Compilation en cours…";
-        Log.AppendLine(run ? $"▶ Exécution : {ProjectPath}" : $"🔨 Compilation : {ProjectPath}", OutputKind.Info);
 
         try
         {
-            ExecutionResult result = run
-                ? await _compiler.RunAsync(ProjectPath)
-                : await _compiler.BuildAsync(ProjectPath);
+            SaveAllRequested?.Invoke();
+
+            Log.Clear();
+            Diagnostics.Clear();
+            Status = runningStatus;
+            Log.AppendLine(header, OutputKind.Info);
+
+            ExecutionResult result = await action();
 
             foreach (var d in result.Diagnostics) Diagnostics.Add(d);
             int errors = result.Diagnostics.Count(d => d.IsError);

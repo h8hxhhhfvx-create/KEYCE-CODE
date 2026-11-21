@@ -27,10 +27,16 @@ dotnet run --project KeyceCode.csproj
 
 ## Organisation du code
 
-- `Models/` : `Project` et `CodeFile`
-- `Services/` : opérations sur les fichiers et chargement de projets
-- `ViewModels/` : état et actions du projet courant
-- `Views/ExplorerView.cs` : explorateur de projet Windows Forms
+- `Models/` : `Project`, `CodeFile`, `EditorTab`, `Diagnostic` (analyse), `BuildDiagnostic` et `ConsoleBuffer` (console)
+- `Services/` :
+  - fichiers et projets : `FileService`, `ProjectService`
+  - éditeur : `SyntaxHighlightingService`
+  - analyse : `CodeAnalysisService` (Roslyn)
+  - compilation et exécution : `CompilerService`, `ProcessSession`, `TerminalService`
+- `ViewModels/` : `ProjectViewModel`, `EditorViewModel`, `OutputViewModel`, `TerminalViewModel`, `ViewModelBase`
+- `Views/` : `ExplorerView` (Windows Forms), `EditorView` / `CodeEditorSurface` (AvalonEdit),
+  `OutputView` et `TerminalView` (WPF hébergés dans la fenêtre Windows Forms)
+- `Resources/` : coloration syntaxique C# (`Syntax/`) et styles de la console (`ConsoleTemplates.xaml`)
 
 ## Éditeur de code
 
@@ -57,3 +63,26 @@ dotnet test KeyceCode.Tests/KeyceCode.Tests.csproj
 ```
 
 Le cahier des charges impose Windows Forms ; l’explorateur est donc un contrôle C# et non une vue WPF/XAML.
+
+## Analyse du code
+
+Le bouton « 🔍 Analyser » (menu Exécuter) utilise Roslyn pour détecter les erreurs et avertissements C# du
+fichier ouvert. Les résultats s’affichent dans l’onglet **Analyse** ; un double-clic sur un problème place le
+curseur à la ligne et à la colonne concernées.
+
+## Compilation, exécution, console et terminal
+
+Le panneau du bas contient trois onglets : **Console**, **Terminal** et **Analyse**.
+
+- **Compiler** (`Ctrl+Maj+B`) : `dotnet build` sur le projet ouvert (ou sur le fichier `.cs` courant).
+- **Exécuter** (`F5`) : `dotnet run`. Les fichiers `.py`, `.js`, `.ps1`, `.bat` et `.cmd` sont lancés dans la même console.
+- **Arrêter** (`Maj+F5`) : arrête le programme (et tous ses sous-processus) ou la commande en cours.
+- Les fichiers modifiés sont enregistrés automatiquement avant chaque compilation ou exécution.
+- La console affiche en direct la sortie et les erreurs ; la zone « Saisie » envoie du texte au programme
+  (`Console.ReadLine`, etc.).
+- Les erreurs de compilation sont listées sous la console : un double-clic ouvre le fichier à la bonne ligne.
+- Le **terminal** exécute des commandes via `cmd.exe` dans le dossier du projet (`cd`, `cls`, changement de lecteur et
+  historique ↑/↓ pris en charge).
+
+La cible compilée est le projet ouvert (`.csproj` ou dossier) ; sans projet ouvert, c’est le fichier `.cs` courant
+(avec son `.csproj` s’il se trouve dans le même dossier). Le SDK .NET doit être dans le `PATH`.

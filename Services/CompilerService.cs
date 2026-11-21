@@ -26,6 +26,7 @@ public sealed partial class CompilerService
     {
         var target = Resolve(path);
         return ExecuteAsync(
+            "dotnet",
             $"build {target.Argument} --nologo --verbosity minimal -tl:off",
             target.WorkingDirectory, ct);
     }
@@ -42,7 +43,19 @@ public sealed partial class CompilerService
             ? $"run {target.Argument}"
             : $"run --project {target.Argument} --no-launch-profile --verbosity quiet";
 
-        return ExecuteAsync(args, target.WorkingDirectory, ct);
+        return ExecuteAsync("dotnet", args, target.WorkingDirectory, ct);
+    }
+
+    /// <summary>
+    /// Lance un outil externe quelconque (python, node, powershell, cmd...) dans la même console,
+    /// avec saisie clavier et bouton Arrêter. Utilisé pour les fichiers qui ne sont pas du C#.
+    /// </summary>
+    public Task<ExecutionResult> RunToolAsync(string fileName, string arguments, string workingDirectory, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            throw new ArgumentException("Aucun outil à lancer.");
+
+        return ExecuteAsync(fileName, arguments, workingDirectory, ct);
     }
 
     /// <summary>Envoie une ligne au programme en cours (Console.ReadLine, etc.).</summary>
@@ -53,13 +66,13 @@ public sealed partial class CompilerService
 
     // ------------------------------------------------------------------
 
-    private async Task<ExecutionResult> ExecuteAsync(string args, string workingDirectory, CancellationToken ct)
+    private async Task<ExecutionResult> ExecuteAsync(string fileName, string args, string workingDirectory, CancellationToken ct)
     {
         if (_busy) throw new InvalidOperationException("Une opération est déjà en cours.");
         _busy = true;
 
         var captured = new StringBuilder();
-        using var session = new ProcessSession("dotnet", args, workingDirectory);
+        using var session = new ProcessSession(fileName, args, workingDirectory);
         session.OutputReceived += (text, kind) =>
         {
             lock (captured)
@@ -80,7 +93,7 @@ public sealed partial class CompilerService
         catch (Win32Exception)
         {
             OutputReceived?.Invoke(
-                "Impossible de lancer « dotnet ». Vérifiez que le SDK .NET est installé et présent dans le PATH.\n",
+                $"Impossible de lancer « {fileName} ». Vérifiez que l'outil est installé et présent dans le PATH.\n",
                 OutputKind.Error);
             return new ExecutionResult(-1, false, Array.Empty<BuildDiagnostic>());
         }

@@ -1,6 +1,6 @@
-using System.Diagnostics;
 using System.Drawing;
-using System.Text.RegularExpressions;
+using System.Windows.Forms.Integration;
+using KeyceCode.Models;
 using KeyceCode.Services;
 using KeyceCode.ViewModels;
 using KeyceCode.Views;
@@ -16,7 +16,17 @@ public sealed class Form1 : Form
     private readonly List<(int Start, int End, int Line, int Column)> diagnosticRanges = new();
     private readonly RichTextBox output = new() { Dock = DockStyle.Fill, ReadOnly = true, BackColor = Color.FromArgb(20, 22, 27), ForeColor = Color.Gainsboro, BorderStyle = BorderStyle.None, Font = new Font("Cascadia Mono", 10) };
     private readonly ToolStripStatusLabel status = new("Prêt") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
+
+    // MEMBRE 4 : compilation, exécution, console et terminal intégrés.
+    private readonly OutputViewModel outputViewModel = new();
+    private readonly TerminalViewModel terminalViewModel = new();
+    private readonly TabControl bottomTabs = new() { Dock = DockStyle.Fill, Appearance = TabAppearance.Normal };
+    private readonly TabPage consoleTab = new("Console") { BackColor = Color.FromArgb(30, 30, 30) };
+    private readonly TabPage terminalTab = new("Terminal") { BackColor = Color.FromArgb(30, 30, 30) };
+    private readonly TabPage analysisTab = new("Analyse") { BackColor = Color.FromArgb(20, 22, 27) };
+
     private string? workspace;
+    private string? buildTarget;
 
     public Form1()
     {
@@ -24,7 +34,12 @@ public sealed class Form1 : Form
         BackColor = Color.FromArgb(37, 40, 48); ForeColor = Color.Gainsboro; StartPosition = FormStartPosition.CenterScreen;
         BuildLayout();
         output.MouseDoubleClick += Output_MouseDoubleClick;
-        FormClosing += (_, e) => { if (tabs.TabPages.Cast<TabPage>().Any(t => !CanClose(t))) e.Cancel = true; };
+        ConnectRunTools();
+        FormClosing += (_, e) =>
+        {
+            if (tabs.TabPages.Cast<TabPage>().Any(t => !CanClose(t))) { e.Cancel = true; return; }
+            StopAll();
+        };
     }
 
     private void BuildLayout()
@@ -48,30 +63,52 @@ public sealed class Form1 : Form
         Add(editMenu, "Copier", (_, _) => Editor()?.Copy(), Keys.Control | Keys.C);
         Add(editMenu, "Coller", (_, _) => Editor()?.Paste(), Keys.Control | Keys.V);
         Add(editMenu, "Rechercher…", (_, _) => FindText(), Keys.Control | Keys.F);
-        var runMenu = new ToolStripMenuItem("Exécuter"); Add(runMenu, "Lancer le fichier", async (_, _) => await RunCurrent(), Keys.F5);
+        var runMenu = new ToolStripMenuItem("Exécuter");
+        Add(runMenu, "Compiler", (_, _) => CompileProject(), Keys.Control | Keys.Shift | Keys.B);
+        Add(runMenu, "Lancer le fichier", async (_, _) => await RunCurrent(), Keys.F5);
+        Add(runMenu, "Arrêter", (_, _) => StopAll(), Keys.Shift | Keys.F5);
+        runMenu.DropDownItems.Add(new ToolStripSeparator());
+        Add(runMenu, "Analyser le code", (_, _) => AnalyzeCurrent());
         menu.Items.AddRange([fileMenu, editMenu, runMenu]); MainMenuStrip = menu;
 
         var bar = new ToolStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, GripStyle = ToolStripGripStyle.Hidden, Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
         Button(bar, "＋ Nouveau", () => NewFile()); Button(bar, "Ouvrir", OpenFile); Button(bar, "Projet C#", OpenProject); Button(bar, "Dossier", OpenWorkspace); Button(bar, "Enregistrer", SaveCurrent);
-        bar.Items.Add(new ToolStripSeparator()); Button(bar, "▶ Exécuter (F5)", async () => await RunCurrent());
+        bar.Items.Add(new ToolStripSeparator());
+        Button(bar, "🔨 Compiler", CompileProject);
+        Button(bar, "▶ Exécuter (F5)", async () => await RunCurrent());
+        Button(bar, "■ Arrêter", StopAll);
         Button(bar, "🔍 Analyser", AnalyzeCurrent);
 
         var split = new SplitContainer { Size = new Size(1200, 700), Dock = DockStyle.Fill, SplitterDistance = 260, BackColor = Color.FromArgb(37, 40, 48), Panel1MinSize = 180, Panel2MinSize = 400 };
         split.Panel1.Controls.Add(explorer);
         explorer.FileOpenRequested += OpenPath;
-        explorer.ProjectOpened += project => { workspace = project.RootPath; status.Text = $"Projet : {project.Name}"; };
+        explorer.ProjectOpened += project =>
+        {
+            workspace = project.RootPath;
+            buildTarget = project.EntryFilePath is { } entry && entry.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) ? entry : project.RootPath;
+            terminalViewModel.SetWorkingDirectory(project.RootPath);
+            UpdateBuildTarget();
+            status.Text = $"Projet : {project.Name}";
+        };
         explorer.ItemRenamed += UpdateOpenPaths;
         explorer.BeforeDelete += ConfirmOpenFilesBeforeDelete;
         var editorOutput = new SplitContainer { Size = new Size(900, 700), Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 520, BackColor = Color.FromArgb(37, 40, 48), Panel1MinSize = 180, Panel2MinSize = 100 };
         editorOutput.Panel1.Controls.Add(tabs);
-        var outputPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(20, 22, 27) };
-        outputPanel.Controls.Add(output);
-        outputPanel.Controls.Add(new Label { Text = "  SORTIE", Dock = DockStyle.Top, Height = 28, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Silver, BackColor = Color.FromArgb(30, 33, 40), Font = new Font("Segoe UI", 9, FontStyle.Bold) });
-        editorOutput.Panel2.Controls.Add(outputPanel); split.Panel2.Controls.Add(editorOutput);
+        BuildBottomPanel();
+        editorOutput.Panel2.Controls.Add(bottomTabs); split.Panel2.Controls.Add(editorOutput);
         var strip = new StatusStrip { BackColor = Color.FromArgb(0, 104, 156), ForeColor = Color.White }; strip.Items.Add(status);
         Controls.Add(split); Controls.Add(bar); Controls.Add(menu); Controls.Add(strip);
         bar.Dock = DockStyle.Top; menu.Dock = DockStyle.Top; strip.Dock = DockStyle.Bottom;
+        tabs.SelectedIndexChanged += (_, _) => UpdateBuildTarget();
         NewFile();
+    }
+
+    private void BuildBottomPanel()
+    {
+        consoleTab.Controls.Add(new ElementHost { Dock = DockStyle.Fill, Child = new OutputView { DataContext = outputViewModel } });
+        terminalTab.Controls.Add(new ElementHost { Dock = DockStyle.Fill, Child = new TerminalView { DataContext = terminalViewModel } });
+        analysisTab.Controls.Add(output);
+        bottomTabs.TabPages.AddRange(new[] { consoleTab, terminalTab, analysisTab });
     }
 
     private static void Add(ToolStripMenuItem parent, string label, EventHandler action, Keys shortcut = Keys.None)
@@ -130,7 +167,7 @@ public sealed class Form1 : Form
             if (dialog.ShowDialog(this) != DialogResult.OK) return;
             path = dialog.FileName;
         }
-        try { fileService.WriteText(path, editor.Text); page.Tag = Path.GetFullPath(path); editor.Modified = false; UpdateTitle(page); status.Text = $"Enregistré : {path}"; if (workspace is not null) explorer.RefreshProject(); }
+        try { fileService.WriteText(path, editor.Text); page.Tag = Path.GetFullPath(path); editor.Modified = false; UpdateTitle(page); UpdateBuildTarget(); status.Text = $"Enregistré : {path}"; if (workspace is not null) explorer.RefreshProject(); }
         catch (Exception ex) { MessageBox.Show(this, $"Impossible d’enregistrer.\n{ex.Message}", "KeyceCode", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
     private void UpdateTitle(TabPage page)
@@ -158,6 +195,7 @@ public sealed class Form1 : Form
             else continue;
             UpdateTitle(page);
         }
+        UpdateBuildTarget();
     }
 
     private bool ConfirmOpenFilesBeforeDelete(string targetPath)
@@ -201,6 +239,7 @@ public sealed class Form1 : Form
     {
         var editor = Editor();
         if (editor is null) return;
+        ShowBottomTab(analysisTab);
 
         try
         {
@@ -258,37 +297,114 @@ public sealed class Form1 : Form
         return text.Length;
     }
 
+    // ------------------------------------------------------------------
+    // Compilation / exécution (MEMBRE 4)
+    // ------------------------------------------------------------------
+
+    private void ConnectRunTools()
+    {
+        // Enregistre les fichiers modifiés avant chaque compilation ou exécution.
+        outputViewModel.SaveAllRequested += SaveAllOpenFiles;
+        // Double-clic sur une erreur de compilation : ouvre le fichier et va à la ligne.
+        outputViewModel.DiagnosticActivated += OpenDiagnostic;
+        // Le message d'état de la console est répété dans la barre d'état de la fenêtre.
+        outputViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(OutputViewModel.Status)) status.Text = outputViewModel.Status;
+        };
+        UpdateBuildTarget();
+    }
+
+    private void ShowBottomTab(TabPage page) => bottomTabs.SelectedTab = page;
+
+    /// <summary>Projet ouvert, sinon fichier .cs courant : c'est ce que « Compiler » et « Exécuter » utilisent.</summary>
+    private void UpdateBuildTarget()
+    {
+        try
+        {
+            outputViewModel.ProjectPath = ResolveBuildTarget();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            outputViewModel.ProjectPath = null;
+        }
+    }
+
+    private string? ResolveBuildTarget()
+    {
+        if (buildTarget is not null) return buildTarget;
+        var file = PathOf();
+        if (file is null || !file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)) return null;
+        // Un .cs ouvert à côté d'un .csproj est compilé avec son projet, sinon en fichier seul.
+        var directory = Path.GetDirectoryName(file);
+        return directory is not null && Directory.EnumerateFiles(directory, "*.csproj").Any() ? directory : file;
+    }
+
+    private void SaveAllOpenFiles()
+    {
+        foreach (var page in tabs.TabPages.Cast<TabPage>().ToList())
+            if (EditorOf(page)?.Modified == true && PathOf(page) is not null) SavePage(page);
+    }
+
+    private void OpenDiagnostic(BuildDiagnostic diagnostic)
+    {
+        if (!File.Exists(diagnostic.File)) { status.Text = $"Fichier introuvable : {diagnostic.File}"; return; }
+        OpenPath(Path.GetFullPath(diagnostic.File));
+        if (Editor() is not { } editor) return;
+        var position = GetLineStartOffset(editor.Text, diagnostic.Line) + Math.Max(0, diagnostic.Column - 1);
+        editor.Select(Math.Min(position, editor.Text.Length), 0);
+        editor.Focus();
+        status.Text = $"{diagnostic.Code} : ligne {diagnostic.Line}, colonne {diagnostic.Column}";
+    }
+
+    private void CompileProject()
+    {
+        ShowBottomTab(consoleTab);
+        if (!outputViewModel.CompileCommand.CanExecute(null)) { status.Text = "Une opération est déjà en cours."; return; }
+        outputViewModel.CompileCommand.Execute(null);
+    }
+
+    private void RunProject()
+    {
+        ShowBottomTab(consoleTab);
+        if (!outputViewModel.RunCommand.CanExecute(null)) { status.Text = "Une opération est déjà en cours."; return; }
+        outputViewModel.RunCommand.Execute(null);
+    }
+
+    private void StopAll()
+    {
+        outputViewModel.Stop();
+        terminalViewModel.Stop();
+    }
+
     private async Task RunCurrent()
     {
         var editor = Editor(); if (editor is null) return;
         if (PathOf() is null) { SaveCurrent(); if (PathOf() is null) return; }
         SaveCurrent(); var file = PathOf()!; var ext = Path.GetExtension(file).ToLowerInvariant();
+
+        // C# : compilation et exécution via le SDK .NET (projet ouvert ou fichier seul).
+        if (ext == ".cs") { RunProject(); return; }
+
+        // Autres langages : lancés dans la même console (sortie en direct, saisie clavier, bouton Arrêter).
         var (exe, args) = ext switch
         {
             ".py" => ("python", Quote(file)), ".js" => ("node", Quote(file)), ".ps1" => ("powershell", $"-NoProfile -ExecutionPolicy Bypass -File {Quote(file)}"),
-            ".bat" or ".cmd" => ("cmd", $"/c {Quote(file)}"), ".cs" => await CSharpCommand(file),
+            ".bat" or ".cmd" => ("cmd", $"/c {Quote(file)}"),
             _ => ("", "")
         };
-        if (exe.Length == 0) { output.Text = $"Aucun exécuteur configuré pour {ext}.\r\nLangages pris en charge : C#, Python, JavaScript, PowerShell et Batch."; return; }
-        output.Clear(); output.AppendText($"> {exe} {args}\r\n\r\n"); status.Text = "Exécution en cours…";
-        try
+        ShowBottomTab(consoleTab);
+        if (exe.Length == 0)
         {
-            using var process = new Process { StartInfo = new ProcessStartInfo(exe, args) { WorkingDirectory = Path.GetDirectoryName(file)!, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true } };
-            process.Start(); var stdout = process.StandardOutput.ReadToEndAsync(); var stderr = process.StandardError.ReadToEndAsync(); await process.WaitForExitAsync();
-            output.AppendText(await stdout); var errors = await stderr; if (errors.Length > 0) output.AppendText(errors);
-            output.AppendText($"\r\n[Terminé avec le code {process.ExitCode}]"); status.Text = $"Terminé (code {process.ExitCode})";
+            outputViewModel.Log.Clear();
+            outputViewModel.Log.AppendLine($"Aucun exécuteur configuré pour {ext}.", OutputKind.Error);
+            outputViewModel.Log.AppendLine("Langages pris en charge : C#, Python, JavaScript, PowerShell et Batch.", OutputKind.Info);
+            return;
         }
-        catch (Exception ex) { output.AppendText($"Erreur : {ex.Message}\r\nVérifiez que l’outil est installé et accessible dans PATH."); status.Text = "Échec de l’exécution"; }
+        if (outputViewModel.IsBusy) { status.Text = "Une opération est déjà en cours."; return; }
+        await outputViewModel.RunToolAsync(exe, args, Path.GetDirectoryName(file)!, $"{exe} {args}");
     }
     private static string Quote(string value) => $"\"{value.Replace("\"", "\\\"")}\"";
-    private static async Task<(string, string)> CSharpCommand(string file)
-    {
-        var dir = Path.GetDirectoryName(file)!; var project = Directory.GetFiles(dir, "*.csproj").FirstOrDefault();
-        if (project is not null) return ("dotnet", $"run --project {Quote(project)}");
-        var temp = Path.Combine(Path.GetTempPath(), "KeyceCodeRun", Path.GetFileNameWithoutExtension(file)); Directory.CreateDirectory(temp);
-        await File.WriteAllTextAsync(Path.Combine(temp, "Runner.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>");
-        File.Copy(file, Path.Combine(temp, "Program.cs"), true); return ("dotnet", $"run --project {Quote(Path.Combine(temp, "Runner.csproj"))}");
-    }
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
         if (keyData == Keys.F5) { _ = RunCurrent(); return true; }
