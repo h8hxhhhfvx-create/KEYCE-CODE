@@ -680,6 +680,7 @@ public sealed class Form1 : Form
         if (string.IsNullOrWhiteSpace(path)) { status.Text = "Ouvrez un projet avant de déboguer."; return; }
         try
         {
+            SaveAllOpenFiles();
             var project = Directory.Exists(path) ? Directory.EnumerateFiles(path, "*.csproj", SearchOption.AllDirectories).FirstOrDefault() : path;
             if (string.IsNullOrWhiteSpace(project)) throw new FileNotFoundException("Aucun projet .csproj trouvé.");
             var directory = Path.GetDirectoryName(project)!;
