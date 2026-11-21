@@ -51,9 +51,9 @@ public sealed class Form1 : Form
         Add(fileMenu, "Ouvrir un dossier de projet…", (_, _) => OpenWorkspace());
         fileMenu.DropDownItems.Add(new ToolStripSeparator());
         Add(fileMenu, "Enregistrer", (_, _) => SaveCurrent(), Keys.Control | Keys.S);
-        Add(fileMenu, "Enregistrer sous…", (_, _) => SaveAs());
+        Add(fileMenu, "Enregistrer sous…", (_, _) => SaveAs(), Keys.Control | Keys.Shift | Keys.S);
         fileMenu.DropDownItems.Add(new ToolStripSeparator());
-        Add(fileMenu, "Fermer l’onglet", (_, _) => CloseCurrent());
+        Add(fileMenu, "Fermer l’onglet", (_, _) => CloseCurrent(), Keys.Control | Keys.W);
         Add(fileMenu, "Quitter", (_, _) => Close());
         var editMenu = new ToolStripMenuItem("Édition");
         Add(editMenu, "Annuler", (_, _) => Editor()?.Undo(), Keys.Control | Keys.Z);
@@ -268,7 +268,7 @@ public sealed class Form1 : Form
     private void ShowShortcuts()
     {
         MessageBox.Show(this,
-            "Ctrl+N  Nouveau fichier\nCtrl+O  Ouvrir\nCtrl+S  Enregistrer\nCtrl+Z  Annuler\nCtrl+Y  Rétablir\nCtrl+F  Rechercher\nCtrl+Maj+F  Rechercher dans les fichiers\nF5  Exécuter",
+            "Ctrl+N  Nouveau fichier\nCtrl+O  Ouvrir\nCtrl+S  Enregistrer\nCtrl+Maj+S  Enregistrer sous\nCtrl+W  Fermer l’onglet\nCtrl+Z  Annuler\nCtrl+Y  Rétablir\nCtrl+F  Rechercher\nCtrl+H  Remplacer\nCtrl+Maj+F  Rechercher dans les fichiers\nF5  Exécuter",
             "Raccourcis clavier — KEYCE CODE",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
