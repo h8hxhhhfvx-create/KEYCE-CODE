@@ -22,6 +22,8 @@ public sealed class Form1 : Form
     private readonly AiAgentService aiAgentService = new();
     private readonly LanguageRunnerService languageRunnerService = new();
     private readonly TestService testService = new();
+    private readonly DebuggerService debuggerService = new();
+    private readonly List<DebugBreakpoint> debugBreakpoints = new();
     private GitService? gitService;
     private readonly List<(int Start, int End, int Line, int Column)> diagnosticRanges = new();
     private readonly List<(int Start, int End, string FilePath, int Line, int Column)> searchRanges = new();
@@ -50,7 +52,7 @@ public sealed class Form1 : Form
         output.MouseDoubleClick += Output_MouseDoubleClick;
         outputViewModel.DiagnosticActivated += OpenDiagnostic;
         FormClosing += (_, e) => { if (tabs.TabPages.Cast<TabPage>().Any(t => !CanClose(t))) e.Cancel = true; };
-        FormClosed += (_, _) => { liveAnalysisCancellation?.Cancel(); outputViewModel.Stop(); terminalViewModel.Stop(); };
+        FormClosed += async (_, _) => { liveAnalysisCancellation?.Cancel(); outputViewModel.Stop(); terminalViewModel.Stop(); await debuggerService.DisposeAsync(); };
     }
 
     private void BuildLayout()
@@ -90,6 +92,9 @@ public sealed class Form1 : Form
         Add(viewMenu, "Tabulations : 8 espaces", (_, _) => SetTabSize(8));
         var runMenu = new ToolStripMenuItem("Exécuter"); Add(runMenu, "Lancer le fichier", async (_, _) => await RunCurrent(), Keys.F5);
         Add(runMenu, "Lancer les tests du projet", async (_, _) => await RunTestsAsync());
+        Add(runMenu, "Ajouter/retirer un point d’arrêt", (_, _) => ToggleBreakpoint(), Keys.F9);
+        Add(runMenu, "Démarrer le débogage", async (_, _) => await StartDebuggingAsync(), Keys.F5 | Keys.Shift);
+        Add(runMenu, "Arrêter le débogage", async (_, _) => await StopDebuggingAsync());
         var gitMenu = new ToolStripMenuItem("Git");
         Add(gitMenu, "Actualiser l’état", async (_, _) => await RefreshGitStatusAsync());
         Add(gitMenu, "Créer un commit…", async (_, _) => await CommitChangesAsync());
@@ -125,12 +130,12 @@ public sealed class Form1 : Form
         // Le panneau inférieur contient plusieurs vues (console, terminal, IA) dont
         // les barres d'actions et les champs de saisie doivent rester entièrement
         // visibles, même lorsque la fenêtre n'est pas maximisée.
-        var editorOutput = new SplitContainer { Size = new Size(900, 700), Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 520, BackColor = Color.FromArgb(37, 40, 48), Panel1MinSize = 180, Panel2MinSize = 150 };
+        var editorOutput = new SplitContainer { Size = new Size(900, 700), Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 520, BackColor = Color.FromArgb(37, 40, 48), Panel1MinSize = 180, Panel2MinSize = 220 };
         editorOutput.Panel1.Controls.Add(tabs);
         var outputPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(20, 22, 27) };
         outputPanel.Controls.Add(output);
         outputPanel.Controls.Add(new Label { Text = "  SORTIE", Dock = DockStyle.Top, Height = 28, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Silver, BackColor = Color.FromArgb(30, 33, 40), Font = new Font("Segoe UI", 9, FontStyle.Bold) });
-        bottomTabs = new TabControl { Dock = DockStyle.Fill, MinimumSize = new Size(0, 150) };
+        bottomTabs = new TabControl { Dock = DockStyle.Fill, MinimumSize = new Size(0, 220) };
         bottomTabs.TabPages.Add(new TabPage("Sortie") { Controls = { outputPanel } });
         bottomTabs.TabPages.Add(CreateWpfTab("Compilation", new OutputView { DataContext = outputViewModel }));
         bottomTabs.TabPages.Add(CreateWpfTab("Terminal", new TerminalView { DataContext = terminalViewModel }));
@@ -494,6 +499,53 @@ public sealed class Form1 : Form
             output.AppendText("\r\nErreur : " + ex.Message);
             status.Text = "Échec des tests.";
         }
+    }
+
+    private void ToggleBreakpoint()
+    {
+        var file = PathOf();
+        var editor = Editor();
+        if (file is null || editor is null) { status.Text = "Ouvrez un fichier avant de placer un point d’arrêt."; return; }
+        var line = editor.CaretPosition.Line;
+        var existing = debugBreakpoints.FirstOrDefault(item => string.Equals(item.FilePath, file, StringComparison.OrdinalIgnoreCase) && item.Line == line);
+        if (existing is not null) debugBreakpoints.Remove(existing);
+        else debugBreakpoints.Add(new DebugBreakpoint(file, line));
+        status.Text = existing is null ? $"Point d’arrêt ajouté : ligne {line}." : $"Point d’arrêt retiré : ligne {line}.";
+    }
+
+    private async Task StartDebuggingAsync()
+    {
+        var path = workspace ?? PathOf();
+        if (string.IsNullOrWhiteSpace(path)) { status.Text = "Ouvrez un projet avant de déboguer."; return; }
+        try
+        {
+            var project = Directory.Exists(path) ? Directory.EnumerateFiles(path, "*.csproj", SearchOption.AllDirectories).FirstOrDefault() : path;
+            if (string.IsNullOrWhiteSpace(project)) throw new FileNotFoundException("Aucun projet .csproj trouvé.");
+            var directory = Path.GetDirectoryName(project)!;
+            var projectName = Path.GetFileNameWithoutExtension(project);
+            var build = await ProcessRunner.RunAsync("dotnet", $"build {Quote(project)} --nologo --verbosity quiet", directory);
+            if (build.ExitCode != 0) { SelectBottomTab("Sortie"); output.Text = build.Output; status.Text = "Débogage impossible : compilation échouée."; return; }
+            var dll = Directory.EnumerateFiles(Path.Combine(directory, "bin"), projectName + ".dll", SearchOption.AllDirectories)
+                .Where(file => !file.Contains(Path.DirectorySeparatorChar + "ref" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault()
+                ?? throw new FileNotFoundException("Assembly compilée introuvable.");
+            debuggerService.OutputReceived += DebuggerOutputReceived;
+            await debuggerService.StartAsync(dll, directory, debugBreakpoints);
+            status.Text = $"Débogage démarré ({debugBreakpoints.Count} point(s) d’arrêt).";
+        }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Débogueur", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task StopDebuggingAsync()
+    {
+        await debuggerService.StopAsync();
+        status.Text = "Débogage arrêté.";
+    }
+
+    private void DebuggerOutputReceived(string text)
+    {
+        if (IsDisposed) return;
+        BeginInvoke(() => { SelectBottomTab("Sortie"); output.AppendText(text); });
     }
 
     private void RunProject()
