@@ -19,6 +19,7 @@ public sealed class Form1 : Form
     private readonly CodeAnalysisService codeAnalysisService = new();
     private readonly FormatService formatService = new();
     private readonly SearchService searchService = new();
+    private GitService? gitService;
     private readonly List<(int Start, int End, int Line, int Column)> diagnosticRanges = new();
     private readonly List<(int Start, int End, string FilePath, int Line, int Column)> searchRanges = new();
     private readonly OutputViewModel outputViewModel = new();
@@ -29,6 +30,7 @@ public sealed class Form1 : Form
     private StatusStrip? statusStrip;
     private readonly RichTextBox output = new() { Dock = DockStyle.Fill, ReadOnly = true, BackColor = Color.FromArgb(20, 22, 27), ForeColor = Color.Gainsboro, BorderStyle = BorderStyle.None, Font = new Font("Cascadia Mono", 10) };
     private readonly ToolStripStatusLabel status = new("Prêt") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
+    private readonly ToolStripStatusLabel cursorStatus = new("Ln 1, Col 1") { TextAlign = ContentAlignment.MiddleRight };
     private string? workspace;
 
     public Form1()
@@ -79,10 +81,15 @@ public sealed class Form1 : Form
         Add(viewMenu, "Tabulations : 4 espaces", (_, _) => SetTabSize(4));
         Add(viewMenu, "Tabulations : 8 espaces", (_, _) => SetTabSize(8));
         var runMenu = new ToolStripMenuItem("Exécuter"); Add(runMenu, "Lancer le fichier", async (_, _) => await RunCurrent(), Keys.F5);
+        var gitMenu = new ToolStripMenuItem("Git");
+        Add(gitMenu, "Actualiser l’état", async (_, _) => await RefreshGitStatusAsync());
+        Add(gitMenu, "Créer un commit…", async (_, _) => await CommitChangesAsync());
+        Add(gitMenu, "Tirer les changements", async (_, _) => await PullGitAsync());
+        Add(gitMenu, "Envoyer les changements", async (_, _) => await PushGitAsync());
         var helpMenu = new ToolStripMenuItem("Aide");
         Add(helpMenu, "Raccourcis clavier", (_, _) => ShowShortcuts());
         Add(helpMenu, "À propos de KEYCE CODE", (_, _) => ShowAbout());
-        menu.Items.AddRange([fileMenu, editMenu, viewMenu, runMenu, helpMenu]); MainMenuStrip = menu;
+        menu.Items.AddRange([fileMenu, editMenu, viewMenu, runMenu, gitMenu, helpMenu]); MainMenuStrip = menu;
 
         var bar = new ToolStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, GripStyle = ToolStripGripStyle.Hidden, Padding = new Padding(6, 3, 6, 3), Height = 34, Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
         toolBar = bar;
@@ -113,10 +120,12 @@ public sealed class Form1 : Form
         bottomTabs.TabPages.Add(CreateWpfTab("Terminal", new TerminalView { DataContext = terminalViewModel }));
         editorOutput.Panel2.Controls.Add(bottomTabs); split.Panel2.Controls.Add(editorOutput);
         var strip = new StatusStrip { BackColor = Color.FromArgb(0, 104, 156), ForeColor = Color.White, Font = new Font("Segoe UI", 9F) }; strip.Items.Add(status);
+        strip.Items.Add(cursorStatus);
         statusStrip = strip;
         Controls.Add(split); Controls.Add(bar); Controls.Add(menu); Controls.Add(strip);
         bar.Dock = DockStyle.Top; menu.Dock = DockStyle.Top; strip.Dock = DockStyle.Bottom;
         ApplyChromeTheme();
+        tabs.SelectedIndexChanged += (_, _) => UpdateCursorStatus(Editor());
         NewFile();
     }
 
@@ -132,7 +141,50 @@ public sealed class Form1 : Form
     {
         outputViewModel.ProjectPath = path;
         var directory = Directory.Exists(path) ? path : Path.GetDirectoryName(path);
-        if (!string.IsNullOrWhiteSpace(directory)) terminalViewModel.SetWorkingDirectory(directory);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            terminalViewModel.SetWorkingDirectory(directory);
+            gitService = new GitService(directory);
+        }
+    }
+
+    private async Task RefreshGitStatusAsync()
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        try
+        {
+            var snapshot = await gitService.GetStatusAsync();
+            output.Clear();
+            output.AppendText($"Branche : {snapshot.Branch}\r\n");
+            output.AppendText(snapshot.Files.Count == 0
+                ? "Dépôt propre.\r\n"
+                : string.Join("\r\n", snapshot.Files.Select(file => file.Display)) + "\r\n");
+            status.Text = $"Git : {snapshot.Branch}, {snapshot.Files.Count} fichier(s) modifié(s).";
+        }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task CommitChangesAsync()
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        var message = Microsoft.VisualBasic.Interaction.InputBox("Message du commit :", "Git — créer un commit");
+        if (string.IsNullOrWhiteSpace(message)) return;
+        try { await gitService.StageAsync(["."]); await gitService.CommitAsync(message); await RefreshGitStatusAsync(); }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task PullGitAsync()
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        try { await gitService.PullAsync(); await RefreshGitStatusAsync(); }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task PushGitAsync()
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        try { await gitService.PushAsync(); await RefreshGitStatusAsync(); }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 
     private static void Add(ToolStripMenuItem parent, string label, EventHandler action, Keys shortcut = Keys.None)
@@ -157,7 +209,7 @@ public sealed class Form1 : Form
     private void NewFile()
     {
         var page = new TabPage("Sans titre") { Tag = null, BackColor = Color.FromArgb(30, 33, 40) };
-        var surface = new CodeEditorSurface(); ApplyEditorSettings(surface); surface.Modified = false;
+        var surface = new CodeEditorSurface(); AttachEditor(surface); ApplyEditorSettings(surface); surface.Modified = false;
         page.Controls.Add(surface); tabs.TabPages.Add(page); tabs.SelectedTab = page; UpdateTitle(page);
     }
     private void OpenFile()
@@ -172,7 +224,7 @@ public sealed class Form1 : Form
         try
         {
             var page = new TabPage(Path.GetFileName(path)) { Tag = path, BackColor = Color.FromArgb(30, 33, 40) };
-            var surface = new CodeEditorSurface(); page.Controls.Add(surface); ApplyEditorSettings(surface); surface.ApplyLanguage(Path.GetExtension(path)); surface.Text = fileService.ReadText(path); surface.Modified = false;
+            var surface = new CodeEditorSurface(); page.Controls.Add(surface); AttachEditor(surface); ApplyEditorSettings(surface); surface.ApplyLanguage(Path.GetExtension(path)); surface.Text = fileService.ReadText(path); surface.Modified = false;
             tabs.TabPages.Add(page); tabs.SelectedTab = page; UpdateTitle(page); SetProjectContext(workspace ?? path); status.Text = path;
         }
         catch (Exception ex) { MessageBox.Show(this, $"Impossible d’ouvrir le fichier.\n{ex.Message}", "KeyceCode", MessageBoxButtons.OK, MessageBoxIcon.Error); }
@@ -188,6 +240,18 @@ public sealed class Form1 : Form
     private void SaveCurrent() { if (tabs.SelectedTab is { } page) SavePage(page); }
 
     private void ApplyEditorSettings(CodeEditorSurface surface) => surface.ApplyAppearance(settings);
+
+    private void AttachEditor(CodeEditorSurface surface)
+    {
+        surface.CaretPositionChanged += (_, _) => UpdateCursorStatus(surface);
+    }
+
+    private void UpdateCursorStatus(CodeEditorSurface? surface)
+    {
+        if (surface is null) return;
+        var (line, column) = surface.CaretPosition;
+        cursorStatus.Text = $"Ln {line}, Col {column}";
+    }
 
     private void SetTheme(string theme)
     {

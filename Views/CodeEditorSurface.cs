@@ -15,9 +15,11 @@ internal sealed class CodeEditorSurface : UserControl
         host.Child = editorView;
         Controls.Add(host);
         editorView.ContentChanged += (_, _) => TextChanged?.Invoke(this, EventArgs.Empty);
+        editorView.CaretPositionChanged += (_, _) => CaretPositionChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public new event EventHandler? TextChanged;
+    public event EventHandler? CaretPositionChanged;
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public new string Text
@@ -32,6 +34,8 @@ internal sealed class CodeEditorSurface : UserControl
         get => editorView.IsModified;
         set => editorView.IsModified = value;
     }
+
+    public (int Line, int Column) CaretPosition => editorView.CaretPosition;
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public int SelectionStart

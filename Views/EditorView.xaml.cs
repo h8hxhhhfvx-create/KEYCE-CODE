@@ -19,11 +19,22 @@ public partial class EditorView : WpfUserControl
         highlightingService.Apply(Editor);
         Editor.TextArea.TextEntering += OnTextEntering;
         Editor.TextArea.TextEntered += OnTextEntered;
+        Editor.TextArea.Caret.PositionChanged += (_, _) => CaretPositionChanged?.Invoke(this, EventArgs.Empty);
         Editor.TextChanged += OnTextChanged;
         UpdateMiniMap();
     }
 
     public event EventHandler? ContentChanged;
+    public event EventHandler? CaretPositionChanged;
+
+    public (int Line, int Column) CaretPosition
+    {
+        get
+        {
+            var line = Editor.Document.GetLineByOffset(Editor.CaretOffset);
+            return (line.LineNumber, Editor.CaretOffset - line.Offset + 1);
+        }
+    }
 
     public string Text
     {
