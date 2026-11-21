@@ -69,7 +69,10 @@ public sealed class Form1 : Form
         Add(viewMenu, "Augmenter la taille du texte", (_, _) => AdjustEditorFontSize(1));
         Add(viewMenu, "Réduire la taille du texte", (_, _) => AdjustEditorFontSize(-1));
         var runMenu = new ToolStripMenuItem("Exécuter"); Add(runMenu, "Lancer le fichier", async (_, _) => await RunCurrent(), Keys.F5);
-        menu.Items.AddRange([fileMenu, editMenu, viewMenu, runMenu]); MainMenuStrip = menu;
+        var helpMenu = new ToolStripMenuItem("Aide");
+        Add(helpMenu, "Raccourcis clavier", (_, _) => ShowShortcuts());
+        Add(helpMenu, "À propos de KEYCE CODE", (_, _) => ShowAbout());
+        menu.Items.AddRange([fileMenu, editMenu, viewMenu, runMenu, helpMenu]); MainMenuStrip = menu;
 
         var bar = new ToolStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, GripStyle = ToolStripGripStyle.Hidden, Padding = new Padding(6, 3, 6, 3), Height = 34, Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
         toolBar = bar;
@@ -237,6 +240,24 @@ public sealed class Form1 : Form
         foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
             ApplyEditorSettings(surface);
         status.Text = $"Taille du texte : {settings.EditorFontSize:0} pt";
+    }
+
+    private void ShowShortcuts()
+    {
+        MessageBox.Show(this,
+            "Ctrl+N  Nouveau fichier\nCtrl+O  Ouvrir\nCtrl+S  Enregistrer\nCtrl+Z  Annuler\nCtrl+Y  Rétablir\nCtrl+F  Rechercher\nCtrl+Maj+F  Rechercher dans les fichiers\nF5  Exécuter",
+            "Raccourcis clavier — KEYCE CODE",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
+    }
+
+    private void ShowAbout()
+    {
+        MessageBox.Show(this,
+            "KEYCE CODE\nÉditeur C# pour Windows\n\nÉdition, coloration syntaxique, compilation et terminal intégrés.",
+            "À propos de KEYCE CODE",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
     }
 
     private void SaveAllOpenFiles()
