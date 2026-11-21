@@ -18,6 +18,8 @@ WPF (AvalonEdit, terminal, compilation et assistant) sont hébergées avec
 
 - créer des projets C# de démarrage, ouvrir, enregistrer et fermer des fichiers avec confirmation des
   modifications non enregistrées ;
+- enregistrer tous les onglets ou les fermer en une seule commande avec
+  confirmation des modifications ;
 - ouvrir une solution ou un projet C# (`.sln`, `.slnx`, `.csproj`) ;
 - retrouver les dix derniers projets dans le menu « Projets récents » ;
 - parcourir les dossiers et fichiers dans l’explorateur ;

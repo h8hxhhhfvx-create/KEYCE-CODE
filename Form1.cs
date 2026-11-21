@@ -79,9 +79,11 @@ public sealed class Form1 : Form
         fileMenu.DropDownItems.Add(recentProjectsMenu);
         fileMenu.DropDownItems.Add(new ToolStripSeparator());
         Add(fileMenu, "Enregistrer", (_, _) => SaveCurrent(), Keys.Control | Keys.S);
+        Add(fileMenu, "Enregistrer tout", (_, _) => SaveAllOpenFiles(), Keys.Control | Keys.Alt | Keys.S);
         Add(fileMenu, "Enregistrer sous…", (_, _) => SaveAs(), Keys.Control | Keys.Shift | Keys.S);
         fileMenu.DropDownItems.Add(new ToolStripSeparator());
         Add(fileMenu, "Fermer l’onglet", (_, _) => CloseCurrent(), Keys.Control | Keys.W);
+        Add(fileMenu, "Fermer tous les onglets", (_, _) => CloseAll(), Keys.Control | Keys.Shift | Keys.W);
         Add(fileMenu, "Quitter", (_, _) => Close());
         var editMenu = new ToolStripMenuItem("Édition");
         Add(editMenu, "Annuler", (_, _) => Editor()?.Undo(), Keys.Control | Keys.Z);
@@ -417,8 +419,10 @@ public sealed class Form1 : Form
             ("Fichier : Nouveau", NewFile),
             ("Fichier : Ouvrir", OpenFile),
             ("Fichier : Enregistrer", SaveCurrent),
+            ("Fichier : Enregistrer tout", SaveAllOpenFiles),
             ("Fichier : Enregistrer sous", SaveAs),
             ("Fichier : Fermer l’onglet", CloseCurrent),
+            ("Fichier : Fermer tous les onglets", CloseAll),
             ("Édition : Annuler", () => Editor()?.Undo()),
             ("Édition : Rétablir", () => Editor()?.Redo()),
             ("Édition : Rechercher", FindText),
@@ -975,6 +979,18 @@ public sealed class Form1 : Form
     }
     private void CloseCurrent()
     { if (tabs.SelectedTab is not { } page || !CanClose(page)) return; tabs.TabPages.Remove(page); page.Dispose(); if (tabs.TabCount == 0) NewFile(); }
+
+    private void CloseAll()
+    {
+        foreach (var page in tabs.TabPages.Cast<TabPage>().ToList())
+        {
+            if (!CanClose(page)) return;
+            tabs.TabPages.Remove(page);
+            page.Dispose();
+        }
+        NewFile();
+        status.Text = "Tous les onglets ont été fermés.";
+    }
 
     private void FindText()
     {
