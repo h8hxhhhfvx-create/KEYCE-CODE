@@ -479,6 +479,13 @@ public sealed class Form1 : Form
         var editor = Editor(); if (editor is null) return;
         if (PathOf() is null) { SaveCurrent(); if (PathOf() is null) return; }
         SaveCurrent(); var file = PathOf()!; var ext = Path.GetExtension(file).ToLowerInvariant();
+        if (ext == ".cs" && TrySetProjectPath())
+        {
+            SelectBottomTab("Compilation");
+            if (outputViewModel.RunCommand.CanExecute(null)) outputViewModel.RunCommand.Execute(null);
+            return;
+        }
+
         var (exe, args) = ext switch
         {
             ".py" => ("python", Quote(file)), ".js" => ("node", Quote(file)), ".ps1" => ("powershell", $"-NoProfile -ExecutionPolicy Bypass -File {Quote(file)}"),
