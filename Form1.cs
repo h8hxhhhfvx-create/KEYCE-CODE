@@ -629,6 +629,7 @@ public sealed class Form1 : Form
     private void OpenSettingsDialog()
     {
         using var dialog = new SettingsDialog(settings);
+        dialog.ApplyTheme(!string.Equals(settings.Theme, "Light", StringComparison.OrdinalIgnoreCase));
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         settings = dialog.GetSettings();
         settingsService.Save(settings);

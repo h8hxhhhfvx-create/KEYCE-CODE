@@ -17,6 +17,11 @@ internal sealed class SettingsDialog : Form
     {
         Text = "Paramètres — KEYCE CODE";
         Width = 540; Height = 430; MinimumSize = new Size(500, 380);
+        AutoScaleMode = AutoScaleMode.Font;
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
         theme.Items.AddRange(["Dark", "Light"]); theme.SelectedItem = current.Theme;
         fontSize.Value = (decimal)Math.Clamp(current.EditorFontSize, 8, 32);
@@ -37,6 +42,18 @@ internal sealed class SettingsDialog : Form
         ok.Click += (_, _) => { if (examMode.Checked) learningMode.Checked = false; else if (learningMode.Checked) examMode.Checked = false; };
     }
 
+    public void ApplyTheme(bool dark)
+    {
+        var surface = dark ? Color.FromArgb(37, 40, 48) : Color.FromArgb(248, 249, 251);
+        var field = dark ? Color.FromArgb(50, 54, 64) : Color.White;
+        var text = dark ? Color.Gainsboro : Color.FromArgb(32, 35, 40);
+        var border = dark ? Color.FromArgb(70, 75, 85) : Color.FromArgb(205, 210, 218);
+
+        BackColor = surface;
+        ForeColor = text;
+        ApplyControlTheme(this, surface, field, text, border);
+    }
+
     public AppSettings GetSettings() => new()
     {
         Theme = theme.SelectedItem?.ToString() ?? "Dark",
@@ -53,5 +70,26 @@ internal sealed class SettingsDialog : Form
     {
         table.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, Padding = new Padding(0, 5, 0, 0) }, 0, row);
         control.Dock = DockStyle.Fill; table.Controls.Add(control, 1, row);
+    }
+
+    private static void ApplyControlTheme(Control parent, Color surface, Color field, Color text, Color border)
+    {
+        foreach (Control child in parent.Controls)
+        {
+            child.ForeColor = text;
+            child.BackColor = child switch
+            {
+                TextBox or ComboBox or NumericUpDown => field,
+                Button => surface,
+                _ => surface
+            };
+            if (child is Button button)
+            {
+                button.FlatStyle = FlatStyle.Flat;
+                button.FlatAppearance.BorderColor = border;
+            }
+            if (child is TextBoxBase textBox) textBox.BorderStyle = BorderStyle.FixedSingle;
+            if (child.HasChildren) ApplyControlTheme(child, surface, field, text, border);
+        }
     }
 }
