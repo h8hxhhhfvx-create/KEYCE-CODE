@@ -42,4 +42,30 @@ public sealed class CompilerServiceTests
             directory.Delete(recursive: true);
         }
     }
+
+    [Fact]
+    public async Task BuildAsync_InvalidProjectReturnsStructuredDiagnostic()
+    {
+        var directory = Directory.CreateTempSubdirectory("KeyceCodeDiagnosticTest");
+        try
+        {
+            await File.WriteAllTextAsync(
+                Path.Combine(directory.FullName, "Invalid.csproj"),
+                "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
+            await File.WriteAllTextAsync(
+                Path.Combine(directory.FullName, "Program.cs"),
+                "class Broken { static void Main() { int value = 1 } }");
+
+            var result = await new CompilerService().BuildAsync(directory.FullName);
+
+            var diagnostic = Assert.Single(result.Diagnostics, item => item.Code == "CS1002");
+            Assert.Equal(1, diagnostic.Line);
+            Assert.True(diagnostic.Column > 0);
+            Assert.True(diagnostic.IsError);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
 }
