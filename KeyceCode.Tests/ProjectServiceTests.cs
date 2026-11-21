@@ -67,7 +67,7 @@ public sealed class ProjectServiceTests : IDisposable
     }
 
     [Fact]
-    public void CreateCSharpProject_CreatesBuildableStarterFiles()
+    public async Task CreateCSharpProject_CreatesBuildableAndRunnableStarterFiles()
     {
         var projectPath = service.CreateCSharpProject(root, "Starter");
 
@@ -75,6 +75,16 @@ public sealed class ProjectServiceTests : IDisposable
         Assert.True(File.Exists(projectPath));
         Assert.Contains("Bonjour depuis KEYCE CODE", File.ReadAllText(Path.Combine(root, "Starter", "Program.cs")));
         Assert.Equal(projectPath, service.Open(projectPath).EntryFilePath);
+
+        var compiler = new CompilerService();
+        var build = await compiler.BuildAsync(projectPath);
+        Assert.True(build.Success, string.Join(Environment.NewLine, build.Diagnostics.Select(d => d.Display)));
+
+        var output = new System.Text.StringBuilder();
+        compiler.OutputReceived += (text, _) => output.Append(text);
+        var run = await compiler.RunAsync(projectPath);
+        Assert.True(run.Success, output.ToString());
+        Assert.Contains("Bonjour depuis KEYCE CODE", output.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
