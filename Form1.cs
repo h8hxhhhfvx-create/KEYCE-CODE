@@ -271,7 +271,7 @@ public sealed class Form1 : Form
     private void ShowShortcuts()
     {
         MessageBox.Show(this,
-            "Ctrl+N  Nouveau fichier\nCtrl+O  Ouvrir\nCtrl+S  Enregistrer\nCtrl+Maj+S  Enregistrer sous\nCtrl+W  Fermer l’onglet\nCtrl+Z  Annuler\nCtrl+Y  Rétablir\nCtrl+F  Rechercher\nCtrl+H  Remplacer\nCtrl+G  Aller à la ligne\nCtrl+Maj+F  Rechercher dans les fichiers\nF5  Exécuter",
+            "Ctrl+N  Nouveau fichier\nCtrl+O  Ouvrir\nCtrl+S  Enregistrer\nCtrl+Maj+S  Enregistrer sous\nCtrl+W  Fermer l’onglet\nCtrl+Z  Annuler\nCtrl+Y  Rétablir\nCtrl+F  Rechercher\nCtrl+H  Remplacer\nCtrl+G  Aller à la ligne\nCtrl++ / Ctrl+-  Zoomer\nCtrl+0  Taille normale\nCtrl+Maj+F  Rechercher dans les fichiers\nF5  Exécuter",
             "Raccourcis clavier — KEYCE CODE",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
@@ -620,6 +620,17 @@ public sealed class Form1 : Form
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
         if (keyData == Keys.F5) { _ = RunCurrent(); return true; }
+        if (keyData == (Keys.Control | Keys.Oemplus) || keyData == (Keys.Control | Keys.Add)) { AdjustEditorFontSize(1); return true; }
+        if (keyData == (Keys.Control | Keys.OemMinus) || keyData == (Keys.Control | Keys.Subtract)) { AdjustEditorFontSize(-1); return true; }
+        if (keyData == (Keys.Control | Keys.D0) || keyData == (Keys.Control | Keys.NumPad0))
+        {
+            settings.EditorFontSize = 13;
+            settingsService.Save(settings);
+            foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
+                ApplyEditorSettings(surface);
+            status.Text = "Taille du texte réinitialisée : 13 pt";
+            return true;
+        }
         return base.ProcessCmdKey(ref msg, keyData);
     }
     private sealed class DarkColors : ProfessionalColorTable
