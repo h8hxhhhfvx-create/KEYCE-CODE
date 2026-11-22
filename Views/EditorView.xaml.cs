@@ -67,6 +67,16 @@ public partial class EditorView : WpfUserControl
         Editor.Focus();
     }
 
+    public void SelectLine(int lineNumber, int column = 1)
+    {
+        if (lineNumber < 1 || lineNumber > Editor.Document.LineCount) return;
+        var line = Editor.Document.GetLineByNumber(lineNumber);
+        var offset = line.Offset + Math.Clamp(column - 1, 0, line.Length);
+        Editor.Select(offset, 0);
+        Editor.TextArea.Caret.BringCaretToView();
+        Editor.Focus();
+    }
+
     public void Undo() => Editor.Undo();
     public void Redo() => Editor.Redo();
     public void Cut() => Editor.Cut();
@@ -80,6 +90,20 @@ public partial class EditorView : WpfUserControl
     }
 
     public void ApplyLanguage(string? extension) => highlightingService.Apply(Editor, extension);
+
+    public void SetTheme(bool dark)
+    {
+        var background = dark ? System.Drawing.Color.FromArgb(30, 33, 40) : System.Drawing.Color.FromArgb(255, 255, 255);
+        var foreground = dark ? System.Drawing.Color.FromArgb(220, 220, 220) : System.Drawing.Color.FromArgb(35, 40, 48);
+        var gutter = dark ? System.Drawing.Color.FromArgb(125, 132, 145) : System.Drawing.Color.FromArgb(110, 118, 128);
+        var minimap = dark ? System.Drawing.Color.FromArgb(24, 26, 32) : System.Drawing.Color.FromArgb(243, 245, 248);
+        Editor.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(background.R, background.G, background.B));
+        Editor.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(foreground.R, foreground.G, foreground.B));
+        Editor.LineNumbersForeground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(gutter.R, gutter.G, gutter.B));
+        MiniMapText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(gutter.R, gutter.G, gutter.B));
+        MiniMapScrollViewer.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(minimap.R, minimap.G, minimap.B));
+        if (MiniMapScrollViewer.Parent is System.Windows.Controls.Border border) border.Background = MiniMapScrollViewer.Background;
+    }
 
     private void UpdateMiniMap()
     {

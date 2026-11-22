@@ -47,7 +47,9 @@ internal sealed class CodeEditorSurface : UserControl
     }
 
     public void Select(int start, int length) => editorView.Select(start, length);
+    public void SelectLine(int line, int column = 1) => editorView.SelectLine(line, column);
     public void ApplyLanguage(string? extension) => editorView.ApplyLanguage(extension);
+    public void SetTheme(bool dark) => editorView.SetTheme(dark);
     public void Undo() => editorView.Undo();
     public void Redo() => editorView.Redo();
     public void Cut() => editorView.Cut();
