@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SyntaxDefinition name="Generic Code" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Comment" foreground="#6A9955" />
+  <Color name="String" foreground="#CE9178" />
+  <Color name="Keyword" foreground="#569CD6" />
+  <Color name="Number" foreground="#B5CEA8" />
+  <RuleSet>
+    <Span color="Comment" begin="//" end="$" />
+    <Span color="Comment" begin="/\*" end="\*/" />
+    <Span color="String" begin="&quot;" end="&quot;" />
+    <Span color="String" begin="'" end="'" />
+    <Span color="String" begin="`" end="`" />
+    <Keywords color="Keyword">
+      <Word>as</Word><Word>async</Word><Word>await</Word><Word>break</Word><Word>case</Word>
+      <Word>class</Word><Word>const</Word><Word>continue</Word><Word>def</Word><Word>else</Word>
+      <Word>enum</Word><Word>fn</Word><Word>for</Word><Word>func</Word><Word>function</Word>
+      <Word>if</Word><Word>impl</Word><Word>import</Word><Word>in</Word><Word>let</Word>
+      <Word>match</Word><Word>module</Word><Word>mut</Word><Word>new</Word><Word>package</Word>
+      <Word>pub</Word><Word>return</Word><Word>struct</Word><Word>trait</Word><Word>var</Word>
+      <Word>while</Word><Word>yield</Word><Word>true</Word><Word>false</Word><Word>nil</Word>
+      <Word>null</Word><Word>None</Word>
+    </Keywords>
+    <Rule color="Number">\b0[xX][0-9a-fA-F]+\b|\b[0-9]+(\.[0-9]+)?\b</Rule>
+  </RuleSet>
+</SyntaxDefinition>

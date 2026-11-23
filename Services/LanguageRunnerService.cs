@@ -71,7 +71,7 @@ public sealed class LanguageRunnerService
 
     private static (string Executable, string Arguments, IReadOnlyList<string> RequiredTools) CompileAndRunNative(string sourcePath, bool isC)
     {
-        var outputPath = Path.Combine(Path.GetTempPath(), "KeyceCodeNative", Path.GetFileNameWithoutExtension(sourcePath) + ".exe");
+        var outputPath = CreateTemporaryExecutablePath(sourcePath);
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
         var source = Quote(sourcePath);
         var output = Quote(outputPath);
@@ -89,9 +89,15 @@ public sealed class LanguageRunnerService
 
     private static (string Executable, string Arguments) CompileAndRunRust(string sourcePath)
     {
-        var outputPath = Path.Combine(Path.GetTempPath(), "KeyceCodeNative", Path.GetFileNameWithoutExtension(sourcePath) + ".exe");
-        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        var outputPath = CreateTemporaryExecutablePath(sourcePath);
         return ("cmd", $"/d /c rustc {Quote(sourcePath)} -o {Quote(outputPath)} && {Quote(outputPath)}");
+    }
+
+    private static string CreateTemporaryExecutablePath(string sourcePath)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "KeyceCodeNative", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        return Path.Combine(directory, Path.GetFileNameWithoutExtension(sourcePath) + ".exe");
     }
 
     private static string? FindVisualStudioVcVars()

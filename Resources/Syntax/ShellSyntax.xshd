@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SyntaxDefinition name="Shell" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Comment" foreground="#6A9955" />
+  <Color name="String" foreground="#CE9178" />
+  <Color name="Command" foreground="#DCDCAA" />
+  <Color name="Variable" foreground="#9CDCFE" />
+  <RuleSet>
+    <Span color="Comment" begin="#" end="$" />
+    <Span color="String" begin="&quot;" end="&quot;" />
+    <Span color="String" begin="'" end="'" />
+    <Rule color="Variable">\$[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%</Rule>
+    <Rule color="Command">(?&lt;=^|\s)[A-Za-z_][A-Za-z0-9_.-]*(?=\s|$)</Rule>
+  </RuleSet>
+</SyntaxDefinition>

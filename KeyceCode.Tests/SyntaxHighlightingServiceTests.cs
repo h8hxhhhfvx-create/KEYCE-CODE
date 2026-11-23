@@ -17,6 +17,13 @@ public sealed class SyntaxHighlightingServiceTests
     [InlineData(".java")]
     [InlineData(".md")]
     [InlineData(".ps1")]
+    [InlineData(".go")]
+    [InlineData(".rs")]
+    [InlineData(".rb")]
+    [InlineData(".lua")]
+    [InlineData(".yaml")]
+    [InlineData(".sh")]
+    [InlineData(".bat")]
     public void Registry_ResolvesCommonExtensions(string extension)
     {
         Assert.True(new SyntaxHighlightingService().IsSupported(extension));
@@ -27,6 +34,16 @@ public sealed class SyntaxHighlightingServiceTests
     public void IsSupported_NormalizesExtensionWithoutLeadingDot()
     {
         Assert.True(new SyntaxHighlightingService().IsSupported("cs"));
+    }
+
+    [Theory]
+    [InlineData(".go", "Go")]
+    [InlineData(".rs", "Rust")]
+    [InlineData(".yaml", "YAML")]
+    [InlineData(".sh", "Bash")]
+    public void CustomDefinitions_ExposeTheLanguageModeName(string extension, string expectedName)
+    {
+        Assert.Equal(expectedName, new SyntaxHighlightingService().GetDefinitionName(extension));
     }
 
     [Fact]

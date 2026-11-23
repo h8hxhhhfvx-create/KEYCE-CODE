@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SyntaxDefinition name="Data" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Comment" foreground="#6A9955" />
+  <Color name="String" foreground="#CE9178" />
+  <Color name="Property" foreground="#9CDCFE" />
+  <Color name="Number" foreground="#B5CEA8" />
+  <RuleSet>
+    <Span color="Comment" begin="#" end="$" />
+    <Span color="Comment" begin="//" end="$" />
+    <Span color="String" begin="&quot;" end="&quot;" />
+    <Span color="String" begin="'" end="'" />
+    <Rule color="Property">(?&lt;=^|\s)[A-Za-z_][A-Za-z0-9_-]*(?=\s*:)</Rule>
+    <Rule color="Number">\b[0-9]+(\.[0-9]+)?\b</Rule>
+  </RuleSet>
+</SyntaxDefinition>
