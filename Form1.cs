@@ -26,6 +26,7 @@ public sealed class Form1 : Form
     private readonly CodeSymbolService codeSymbolService = new();
     private readonly CodeRenameService codeRenameService = new();
     private readonly SearchService searchService = new();
+    private readonly TextSearchService textSearchService = new();
     private readonly AiAgentService aiAgentService;
     private readonly LanguageRunnerService languageRunnerService = new();
     private readonly PreviewService previewService = new();
@@ -1522,32 +1523,31 @@ public sealed class Form1 : Form
     private void FindText()
     {
         var editor = Editor(); if (editor is null) return;
-        var term = Microsoft.VisualBasic.Interaction.InputBox("Texte à rechercher :", "Rechercher");
-        if (term.Length == 0) return;
-        var index = editor.Text.IndexOf(term, editor.SelectionStart + editor.SelectionLength, StringComparison.CurrentCultureIgnoreCase);
-        if (index < 0) index = editor.Text.IndexOf(term, StringComparison.CurrentCultureIgnoreCase);
-        if (index >= 0) { editor.Select(index, term.Length); editor.Focus(); } else status.Text = "Aucun résultat";
+        using var dialog = new SearchReplaceDialog(false);
+        if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Query.Length == 0) return;
+        var matches = textSearchService.Find(editor.Text, dialog.Query, dialog.Options);
+        var start = editor.SelectionStart + editor.SelectionLength;
+        var match = matches.FirstOrDefault(item => item.Index >= start);
+        if (match.Length == 0 && matches.Count > 0) match = matches[0];
+        if (match.Length > 0) { editor.Select(match.Index, match.Length); editor.Focus(); }
+        else status.Text = "Aucun résultat";
     }
 
     private void ReplaceText()
     {
         var editor = Editor();
         if (editor is null) return;
-        var search = Microsoft.VisualBasic.Interaction.InputBox("Texte à rechercher :", "Remplacer");
-        if (search.Length == 0) return;
-        var replacement = Microsoft.VisualBasic.Interaction.InputBox("Remplacer par :", "Remplacer");
-        var count = 0;
-        var source = editor.Text;
-        for (var index = 0; (index = source.IndexOf(search, index, StringComparison.CurrentCultureIgnoreCase)) >= 0; index += search.Length)
-            count++;
-        if (count == 0)
+        using var dialog = new SearchReplaceDialog(true);
+        if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Query.Length == 0) return;
+        var result = textSearchService.ReplaceAll(editor.Text, dialog.Query, dialog.Replacement, dialog.Options);
+        if (result.Count == 0)
         {
             status.Text = "Aucun résultat à remplacer.";
             return;
         }
 
-        editor.ReplaceText(source.Replace(search, replacement, StringComparison.CurrentCultureIgnoreCase));
-        status.Text = $"{count} occurrence(s) remplacée(s).";
+        editor.ReplaceText(result.Text);
+        status.Text = $"{result.Count} occurrence(s) remplacée(s).";
     }
 
     private void GoToLine()
