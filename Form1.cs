@@ -25,7 +25,7 @@ public sealed class Form1 : Form
     private readonly CodeSymbolService codeSymbolService = new();
     private readonly CodeRenameService codeRenameService = new();
     private readonly SearchService searchService = new();
-    private readonly AiAgentService aiAgentService = new();
+    private readonly AiAgentService aiAgentService;
     private readonly LanguageRunnerService languageRunnerService = new();
     private readonly PreviewService previewService = new();
     private readonly ScriptRunnerService scriptRunnerService = new();
@@ -65,6 +65,7 @@ public sealed class Form1 : Form
     {
         settings = settingsService.Load();
         aiRouter = AiProviderFactory.Create(settings, secretStore);
+        aiAgentService = new AiAgentService(router: aiRouter);
         aiChatViewModel = new AiChatViewModel(settings, router: aiRouter);
         Text = "KEYCE CODE"; Width = 1280; Height = 800; MinimumSize = new Size(900, 600);
         BackColor = Color.FromArgb(37, 40, 48); ForeColor = Color.Gainsboro; StartPosition = FormStartPosition.CenterScreen;
