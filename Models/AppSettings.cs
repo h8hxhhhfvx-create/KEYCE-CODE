@@ -8,6 +8,7 @@ public sealed class AppSettings
     public int TabSize { get; set; } = 4;
     public bool AutoSave { get; set; }
     public int AutoSaveDelaySeconds { get; set; } = 60;
+    public bool FormatOnSave { get; set; }
     public string OllamaEndpoint { get; set; } = "http://localhost:11434";
     public string OllamaModel { get; set; } = "qwen2.5:7b";
     public string GeminiModel { get; set; } = "gemini-2.5-flash";

@@ -13,7 +13,7 @@ public sealed class SettingsServiceTests
         try
         {
             var service = new SettingsService(path);
-            service.Save(new AppSettings { Theme = "Light", EditorFontSize = 16, WordWrap = true, TabSize = 2, LearningMode = true, OllamaModel = "test-model", DebuggerPath = "tools\\vsdbg.exe" });
+            service.Save(new AppSettings { Theme = "Light", EditorFontSize = 16, WordWrap = true, TabSize = 2, FormatOnSave = true, LearningMode = true, OllamaModel = "test-model", DebuggerPath = "tools\\vsdbg.exe" });
 
             var loaded = service.Load();
 
@@ -21,6 +21,7 @@ public sealed class SettingsServiceTests
             Assert.Equal(16, loaded.EditorFontSize);
             Assert.True(loaded.WordWrap);
             Assert.Equal(2, loaded.TabSize);
+            Assert.True(loaded.FormatOnSave);
             Assert.True(loaded.LearningMode);
             Assert.Equal("test-model", loaded.OllamaModel);
             Assert.Equal(Path.GetFullPath("tools\\vsdbg.exe"), loaded.DebuggerPath);
@@ -43,6 +44,7 @@ public sealed class SettingsServiceTests
         Assert.Equal(13, settings.EditorFontSize);
         Assert.False(settings.AutoSave);
         Assert.Equal(60, settings.AutoSaveDelaySeconds);
+        Assert.False(settings.FormatOnSave);
     }
 
     [Fact]

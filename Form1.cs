@@ -1354,7 +1354,22 @@ public sealed class Form1 : Form
             if (dialog.ShowDialog(this) != DialogResult.OK) return;
             path = dialog.FileName;
         }
-        try { fileService.WriteText(path, editor.Text); page.Tag = Path.GetFullPath(path); editor.Modified = false; UpdateTitle(page); status.Text = $"Enregistré : {path}"; if (workspace is not null) explorer.RefreshProject(); }
+        try
+        {
+            if (settings.FormatOnSave && string.Equals(Path.GetExtension(path), ".cs", StringComparison.OrdinalIgnoreCase))
+            {
+                var formatted = formatService.FormatCSharp(editor.Text, settings.TabSize);
+                if (!string.Equals(formatted, editor.Text, StringComparison.Ordinal)) editor.ReplaceText(formatted);
+            }
+            fileService.WriteText(path, editor.Text);
+            page.Tag = Path.GetFullPath(path);
+            editor.Modified = false;
+            UpdateTitle(page);
+            status.Text = settings.FormatOnSave && string.Equals(Path.GetExtension(path), ".cs", StringComparison.OrdinalIgnoreCase)
+                ? $"Formaté et enregistré : {path}"
+                : $"Enregistré : {path}";
+            if (workspace is not null) explorer.RefreshProject();
+        }
         catch (Exception ex) { MessageBox.Show(this, $"Impossible d’enregistrer.\n{ex.Message}", "KeyceCode", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
     private void UpdateTitle(TabPage page)
