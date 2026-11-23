@@ -16,6 +16,7 @@ public sealed class Form1 : Form
     private readonly SourceControlView sourceControl = new();
     private readonly FileService fileService = new();
     private readonly SettingsService settingsService = new();
+    private readonly System.Windows.Forms.Timer autoSaveTimer = new();
     private readonly ISecretStore secretStore = new WindowsCredentialStore();
     private AiRouterService aiRouter = new([]);
     private AppSettings settings = new();
@@ -67,6 +68,8 @@ public sealed class Form1 : Form
         aiRouter = AiProviderFactory.Create(settings, secretStore);
         aiAgentService = new AiAgentService(router: aiRouter);
         aiChatViewModel = new AiChatViewModel(settings, router: aiRouter);
+        autoSaveTimer.Tick += (_, _) => AutoSaveModifiedFiles();
+        ConfigureAutoSaveTimer();
         Text = "KEYCE CODE"; Width = 1280; Height = 800; MinimumSize = new Size(900, 600);
         BackColor = Color.FromArgb(37, 40, 48); ForeColor = Color.Gainsboro; StartPosition = FormStartPosition.CenterScreen;
         BuildLayout();
@@ -77,7 +80,7 @@ public sealed class Form1 : Form
         debuggerService.SnapshotUpdated += DebuggerSnapshotUpdated;
         FormClosing += OnFormClosing;
         scriptRunnerService.OutputReceived += ScriptOutputReceived;
-        FormClosed += async (_, _) => { liveAnalysisCancellation?.Cancel(); liveDiagnosticsCoordinator.Dispose(); outputViewModel.Stop(); terminalViewModel.Stop(); scriptRunnerService.Stop(); await debuggerService.DisposeAsync(); officialLogo?.Dispose(); };
+        FormClosed += async (_, _) => { autoSaveTimer.Stop(); autoSaveTimer.Dispose(); liveAnalysisCancellation?.Cancel(); liveDiagnosticsCoordinator.Dispose(); outputViewModel.Stop(); terminalViewModel.Stop(); scriptRunnerService.Stop(); await debuggerService.DisposeAsync(); officialLogo?.Dispose(); };
     }
 
     private void BuildLayout()
@@ -1142,6 +1145,7 @@ public sealed class Form1 : Form
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         settings = dialog.GetSettings();
         settingsService.Save(settings);
+        ConfigureAutoSaveTimer();
         RefreshRecentProjectsMenu();
         ApplyChromeTheme();
         foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
@@ -1154,6 +1158,31 @@ public sealed class Form1 : Form
     {
         foreach (var page in tabs.TabPages.Cast<TabPage>().ToList())
             if (EditorOf(page)?.Modified == true) SavePage(page);
+    }
+
+    private void ConfigureAutoSaveTimer()
+    {
+        autoSaveTimer.Stop();
+        autoSaveTimer.Interval = Math.Clamp(settings.AutoSaveDelaySeconds, 10, 3600) * 1000;
+        if (settings.AutoSave) autoSaveTimer.Start();
+    }
+
+    private void AutoSaveModifiedFiles()
+    {
+        foreach (var page in tabs.TabPages.Cast<TabPage>().ToList())
+        {
+            var editor = EditorOf(page);
+            var path = PathOf(page);
+            if (editor?.Modified != true || path is null || !File.Exists(path)) continue;
+            try
+            {
+                fileService.WriteText(path, editor.Text);
+                editor.Modified = false;
+                UpdateTitle(page);
+                status.Text = $"Auto-save : {Path.GetFileName(path)}";
+            }
+            catch (Exception ex) { status.Text = $"Auto-save impossible : {ex.Message}"; }
+        }
     }
 
     private void CompileProject()

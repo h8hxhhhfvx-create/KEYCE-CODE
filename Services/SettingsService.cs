@@ -51,6 +51,7 @@ public sealed class SettingsService
         settings.Theme = string.Equals(settings.Theme, "Light", StringComparison.OrdinalIgnoreCase) ? "Light" : "Dark";
         settings.EditorFontSize = Math.Clamp(settings.EditorFontSize, 8, 32);
         settings.TabSize = settings.TabSize is 2 or 4 or 8 ? settings.TabSize : 4;
+        settings.AutoSaveDelaySeconds = Math.Clamp(settings.AutoSaveDelaySeconds, 10, 3600);
         settings.OllamaEndpoint = string.IsNullOrWhiteSpace(settings.OllamaEndpoint)
             ? "http://localhost:11434"
             : settings.OllamaEndpoint.Trim().TrimEnd('/');

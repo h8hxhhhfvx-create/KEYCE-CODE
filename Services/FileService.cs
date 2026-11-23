@@ -12,7 +12,16 @@ public sealed class FileService
         var directory = Path.GetDirectoryName(fullPath)
             ?? throw new IOException("Le dossier du fichier est introuvable.");
         Directory.CreateDirectory(directory);
-        File.WriteAllText(fullPath, content);
+        var temporaryPath = Path.Combine(directory, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.keyce-tmp");
+        try
+        {
+            File.WriteAllText(temporaryPath, content);
+            File.Move(temporaryPath, fullPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+        }
     }
 
     public CodeFile CreateFile(string directory, string name)

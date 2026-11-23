@@ -41,6 +41,8 @@ public sealed class SettingsServiceTests
 
         Assert.Equal("Dark", settings.Theme);
         Assert.Equal(13, settings.EditorFontSize);
+        Assert.False(settings.AutoSave);
+        Assert.Equal(60, settings.AutoSaveDelaySeconds);
     }
 
     [Fact]

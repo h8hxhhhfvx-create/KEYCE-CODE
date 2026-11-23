@@ -23,6 +23,18 @@ public sealed class FileServiceTests : IDisposable
     }
 
     [Fact]
+    public void WriteText_LeavesNoTemporaryFileAfterAtomicReplacement()
+    {
+        var path = Path.Combine(root, "Atomic.cs");
+        File.WriteAllText(path, "old");
+
+        service.WriteText(path, "new");
+
+        Assert.Equal("new", File.ReadAllText(path));
+        Assert.Empty(Directory.EnumerateFiles(root, ".Atomic.cs.*.keyce-tmp"));
+    }
+
+    [Fact]
     public void CreateFile_ReturnsAnAbsolutePathToAnEmptyFile()
     {
         var file = service.CreateFile(root, "Program.cs");

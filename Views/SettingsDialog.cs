@@ -11,14 +11,17 @@ internal sealed class SettingsDialog : Form
     private readonly CheckBox wordWrap = new() { Text = "Retour automatique à la ligne", AutoSize = true };
     private readonly CheckBox learningMode = new() { Text = "Mode apprentissage", AutoSize = true };
     private readonly CheckBox examMode = new() { Text = "Mode examen", AutoSize = true };
+    private readonly CheckBox autoSave = new() { Text = "Enregistrer automatiquement les fichiers existants", AutoSize = true };
+    private readonly NumericUpDown autoSaveDelay = new() { Minimum = 10, Maximum = 3600, Increment = 10 };
     private readonly TextBox endpoint = new();
     private readonly TextBox model = new();
+    private readonly TextBox debuggerPath = new();
 
     public SettingsDialog(AppSettings current)
     {
         recentProjects = [.. current.RecentProjects];
         Text = "Paramètres — KEYCE CODE";
-        Width = 540; Height = 430; MinimumSize = new Size(500, 380);
+        Width = 560; Height = 560; MinimumSize = new Size(520, 500);
         AutoScaleMode = AutoScaleMode.Font;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -29,17 +32,36 @@ internal sealed class SettingsDialog : Form
         fontSize.Value = (decimal)Math.Clamp(current.EditorFontSize, 8, 32);
         tabSize.Items.AddRange([2, 4, 8]); tabSize.SelectedItem = current.TabSize is 2 or 4 or 8 ? current.TabSize : 4;
         wordWrap.Checked = current.WordWrap; learningMode.Checked = current.LearningMode; examMode.Checked = current.ExamMode;
+        autoSave.Checked = current.AutoSave; autoSaveDelay.Value = Math.Clamp(current.AutoSaveDelaySeconds, 10, 3600);
         endpoint.Text = current.OllamaEndpoint; model.Text = current.OllamaModel;
+        debuggerPath.Text = current.DebuggerPath ?? "";
 
-        var table = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(14), ColumnCount = 2, RowCount = 9, AutoSize = true };
+        var table = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(14), ColumnCount = 2, RowCount = 13, AutoSize = true };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180)); table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         AddRow(table, 0, "Thème", theme); AddRow(table, 1, "Taille du texte", fontSize); AddRow(table, 2, "Tabulations", tabSize);
         table.Controls.Add(wordWrap, 1, 3); table.Controls.Add(learningMode, 1, 4); table.Controls.Add(examMode, 1, 5);
-        AddRow(table, 6, "Adresse Ollama", endpoint); AddRow(table, 7, "Modèle Ollama", model);
+        table.Controls.Add(autoSave, 1, 6); AddRow(table, 7, "Délai auto-save (s)", autoSaveDelay);
+        AddRow(table, 8, "Adresse Ollama", endpoint); AddRow(table, 9, "Modèle Ollama", model);
+        var debuggerPanel = new Panel { Dock = DockStyle.Fill };
+        var browseDebugger = new Button { Text = "Parcourir…", Dock = DockStyle.Right, Width = 96, AutoSize = false };
+        browseDebugger.Click += (_, _) =>
+        {
+            using var dialog = new OpenFileDialog
+            {
+                Filter = "Débogueur .NET (vsdbg.exe)|vsdbg.exe|Tous les fichiers (*.*)|*.*",
+                FileName = debuggerPath.Text
+            };
+            if (dialog.ShowDialog(this) == DialogResult.OK)
+                debuggerPath.Text = dialog.FileName;
+        };
+        debuggerPanel.Controls.Add(browseDebugger);
+        debuggerPath.Dock = DockStyle.Fill;
+        debuggerPanel.Controls.Add(debuggerPath);
+        AddRow(table, 10, "Chemin vsdbg.exe", debuggerPanel);
         var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Fill, AutoSize = true };
         var ok = new Button { Text = "Enregistrer", DialogResult = DialogResult.OK, AutoSize = true };
         var cancel = new Button { Text = "Annuler", DialogResult = DialogResult.Cancel, AutoSize = true };
-        buttons.Controls.Add(ok); buttons.Controls.Add(cancel); table.Controls.Add(buttons, 1, 8);
+        buttons.Controls.Add(ok); buttons.Controls.Add(cancel); table.Controls.Add(buttons, 1, 12);
         Controls.Add(table); AcceptButton = ok; CancelButton = cancel;
         ok.Click += (_, _) => { if (examMode.Checked) learningMode.Checked = false; else if (learningMode.Checked) examMode.Checked = false; };
     }
@@ -61,11 +83,14 @@ internal sealed class SettingsDialog : Form
         Theme = theme.SelectedItem?.ToString() ?? "Dark",
         EditorFontSize = (double)fontSize.Value,
         TabSize = Convert.ToInt32(tabSize.SelectedItem ?? 4),
+        AutoSave = autoSave.Checked,
+        AutoSaveDelaySeconds = Convert.ToInt32(autoSaveDelay.Value),
         WordWrap = wordWrap.Checked,
         LearningMode = learningMode.Checked,
         ExamMode = examMode.Checked,
         OllamaEndpoint = endpoint.Text.Trim().TrimEnd('/'),
         OllamaModel = model.Text.Trim(),
+        DebuggerPath = string.IsNullOrWhiteSpace(debuggerPath.Text) ? null : debuggerPath.Text.Trim(),
         RecentProjects = [.. recentProjects]
     };
 
