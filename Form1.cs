@@ -23,6 +23,7 @@ public sealed class Form1 : Form
     private readonly CodeAnalysisService codeAnalysisService = new();
     private readonly LearningHintService learningHintService = new();
     private readonly FormatService formatService = new();
+    private readonly DocumentPersistenceService documentPersistenceService;
     private readonly CodeSymbolService codeSymbolService = new();
     private readonly CodeRenameService codeRenameService = new();
     private readonly CodeReferenceService codeReferenceService = new();
@@ -66,6 +67,7 @@ public sealed class Form1 : Form
 
     public Form1()
     {
+        documentPersistenceService = new DocumentPersistenceService(fileService, formatService);
         settings = settingsService.Load();
         aiRouter = AiProviderFactory.Create(settings, secretStore);
         aiAgentService = new AiAgentService(router: aiRouter);
@@ -1184,7 +1186,7 @@ public sealed class Form1 : Form
             if (editor?.Modified != true || path is null || !File.Exists(path)) continue;
             try
             {
-                fileService.WriteText(path, editor.Text);
+                documentPersistenceService.Save(path, editor.Text, formatCSharp: false, settings.TabSize);
                 editor.Modified = false;
                 UpdateTitle(page);
                 status.Text = $"Auto-save : {Path.GetFileName(path)}";
@@ -1358,16 +1360,12 @@ public sealed class Form1 : Form
         }
         try
         {
-            if (settings.FormatOnSave && string.Equals(Path.GetExtension(path), ".cs", StringComparison.OrdinalIgnoreCase))
-            {
-                var formatted = formatService.FormatCSharp(editor.Text, settings.TabSize);
-                if (!string.Equals(formatted, editor.Text, StringComparison.Ordinal)) editor.ReplaceText(formatted);
-            }
-            fileService.WriteText(path, editor.Text);
+            var result = documentPersistenceService.Save(path, editor.Text, settings.FormatOnSave, settings.TabSize);
+            if (!string.Equals(result.Content, editor.Text, StringComparison.Ordinal)) editor.ReplaceText(result.Content);
             page.Tag = Path.GetFullPath(path);
             editor.Modified = false;
             UpdateTitle(page);
-            status.Text = settings.FormatOnSave && string.Equals(Path.GetExtension(path), ".cs", StringComparison.OrdinalIgnoreCase)
+            status.Text = result.WasFormatted
                 ? $"Formaté et enregistré : {path}"
                 : $"Enregistré : {path}";
             if (workspace is not null) explorer.RefreshProject();

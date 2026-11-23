@@ -13,7 +13,7 @@ public sealed class EditorContractsTests : IDisposable
     public EditorContractsTests() => Directory.CreateDirectory(root);
 
     [Fact]
-    public void EditorDocument_TracksChangesAndSavesThroughFileService()
+    public async Task EditorDocument_TracksChangesAndSavesThroughFileService()
     {
         var path = Path.Combine(root, "Program.cs");
         File.WriteAllText(path, "old");
@@ -24,7 +24,7 @@ public sealed class EditorContractsTests : IDisposable
         document.Text = "new";
 
         Assert.True(document.IsDirty);
-        document.SaveAsync().GetAwaiter().GetResult();
+        await document.SaveAsync();
         Assert.False(document.IsDirty);
         Assert.Equal("new", File.ReadAllText(path));
         Assert.True(changed >= 2);
