@@ -10,6 +10,7 @@ public sealed class TerminalViewModel : ViewModelBase
     private readonly List<string> _history = new();
     private int _historyIndex;
     private string _inputText = "";
+    private string _shellProfile = "cmd";
     private bool _isBusy;
 
     public TerminalViewModel(string? initialDirectory = null)
@@ -36,8 +37,22 @@ public sealed class TerminalViewModel : ViewModelBase
     public RelayCommand HistoryUpCommand { get; }
     public RelayCommand HistoryDownCommand { get; }
 
+    public IReadOnlyList<string> ShellProfiles => _terminal.ShellProfiles;
+
+    public string ShellProfile
+    {
+        get => _shellProfile;
+        set
+        {
+            var profile = value.Equals("PowerShell", StringComparison.OrdinalIgnoreCase) ? "PowerShell" : "cmd";
+            if (!SetProperty(ref _shellProfile, profile)) return;
+            _terminal.SetShellProfile(profile);
+            OnPropertyChanged(nameof(Prompt));
+        }
+    }
+
     /// <summary>Texte affiché avant la zone de saisie : dossier courant, ou "›" si un programme attend une saisie.</summary>
-    public string Prompt => IsBusy ? "›" : _terminal.WorkingDirectory + ">";
+    public string Prompt => IsBusy ? "›" : (ShellProfile == "PowerShell" ? "PS " : "") + _terminal.WorkingDirectory + ">";
 
     public bool IsBusy
     {

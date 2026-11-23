@@ -98,13 +98,23 @@ public sealed class ProjectService
             AddChildren(child.Children, childDirectory);
         }
 
-        foreach (var path in EnumerateFilesSafely(directory).OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
+        foreach (var path in EnumerateFilesCurrentSafely(directory).OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
             target.Add(new CodeFile { Name = Path.GetFileName(path), FullPath = path });
     }
 
     private static IEnumerable<string> EnumerateDirectoriesSafely(string directory)
     {
-        try { return Directory.EnumerateDirectories(directory).ToArray(); }
+        try
+        {
+            return Directory.EnumerateDirectories(directory)
+                .Where(path =>
+                {
+                    try { return (File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0; }
+                    catch (UnauthorizedAccessException) { return false; }
+                    catch (IOException) { return false; }
+                })
+                .ToArray();
+        }
         catch (UnauthorizedAccessException) { return []; }
         catch (IOException) { return []; }
     }
@@ -125,5 +135,12 @@ public sealed class ProjectService
                 pending.Push(child);
         }
         return results;
+    }
+
+    private static IEnumerable<string> EnumerateFilesCurrentSafely(string directory)
+    {
+        try { return Directory.EnumerateFiles(directory).ToArray(); }
+        catch (UnauthorizedAccessException) { return []; }
+        catch (IOException) { return []; }
     }
 }

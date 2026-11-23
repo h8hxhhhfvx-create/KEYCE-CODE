@@ -63,7 +63,7 @@ public sealed class SearchService
                 var occurrences = regex is null ? CountOccurrences(original, query, comparison) : regex.Matches(original).Count;
                 if (occurrences == 0) continue;
                 var updated = regex is null ? ReplaceIgnoreCase(original, query, replacement, comparison) : regex.Replace(original, replacement);
-                File.WriteAllText(file, updated);
+                WriteAtomically(file, updated);
                 results.Add(new ReplacementResult(file, occurrences));
             }
             catch (IOException) { }
@@ -71,6 +71,21 @@ public sealed class SearchService
             catch (DecoderFallbackException) { }
         }
         return results;
+    }
+
+    private static void WriteAtomically(string path, string content)
+    {
+        var directory = Path.GetDirectoryName(path) ?? throw new IOException("Le dossier du fichier est introuvable.");
+        var temporary = Path.Combine(directory, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.keyce-replace-tmp");
+        try
+        {
+            File.WriteAllText(temporary, content);
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
+        }
     }
 
     private static int CountOccurrences(string text, string query, StringComparison comparison)
@@ -105,14 +120,25 @@ public sealed class SearchService
             IEnumerable<string> directories;
             try
             {
+                if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0) continue;
                 files = Directory.EnumerateFiles(directory);
                 directories = Directory.EnumerateDirectories(directory);
             }
             catch (UnauthorizedAccessException) { continue; }
+            catch (IOException) { continue; }
 
             foreach (var file in files) yield return file;
             foreach (var child in directories)
-                if (!IgnoredDirectories.Contains(Path.GetFileName(child))) pending.Push(child);
+            {
+                if (IgnoredDirectories.Contains(Path.GetFileName(child))) continue;
+                try
+                {
+                    if ((File.GetAttributes(child) & FileAttributes.ReparsePoint) == 0)
+                        pending.Push(child);
+                }
+                catch (UnauthorizedAccessException) { }
+                catch (IOException) { }
+            }
         }
     }
 }

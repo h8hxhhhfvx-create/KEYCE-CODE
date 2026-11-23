@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
 using KeyceCode.Models;
 
 namespace KeyceCode.Services;
@@ -21,12 +23,21 @@ public sealed partial class CompilerService
 
     public bool IsBusy => _busy;
 
+    public string? ResolveRunnableProject(string path)
+    {
+        var target = Resolve(path);
+        if (target.File.EndsWith(".sln", StringComparison.OrdinalIgnoreCase) ||
+            target.File.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase))
+            return FindProjectNearSolution(target.File);
+        return target.File.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) ? target.File : null;
+    }
+
     /// <summary>Compile le projet (dotnet build) et renvoie les erreurs/avertissements trouvés.</summary>
     public Task<ExecutionResult> BuildAsync(string path, CancellationToken ct = default)
     {
         var target = Resolve(path);
         return ExecuteAsync(
-            $"build {target.Argument} --nologo --verbosity minimal -tl:off",
+            $"build {target.Argument} --nologo --verbosity minimal -tl:off --disable-build-servers -p:UseSharedCompilation=false",
             target.WorkingDirectory, ct);
     }
 
@@ -35,8 +46,14 @@ public sealed partial class CompilerService
     {
         var target = Resolve(path);
 
-        if (target.File.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Impossible d'exécuter une solution (.sln) : choisissez un projet .csproj.");
+        if (target.File.EndsWith(".sln", StringComparison.OrdinalIgnoreCase) ||
+            target.File.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase))
+        {
+            var project = FindProjectNearSolution(target.File);
+            if (project is null)
+                throw new InvalidOperationException("Impossible de trouver un projet .csproj dans la solution.");
+            target = new Target(project, Path.GetDirectoryName(project)!, false);
+        }
 
         string args = target.IsSingleFile
             ? $"run {target.Argument}"
@@ -100,6 +117,12 @@ public sealed partial class CompilerService
 
         if (Directory.Exists(path))
         {
+            string? solution =
+                Directory.EnumerateFiles(path, "*.slnx", SearchOption.TopDirectoryOnly).FirstOrDefault()
+                ?? Directory.EnumerateFiles(path, "*.sln", SearchOption.TopDirectoryOnly).FirstOrDefault();
+            if (solution is not null)
+                return new Target(solution, path, false);
+
             string? project =
                 Directory.EnumerateFiles(path, "*.csproj", SearchOption.TopDirectoryOnly).FirstOrDefault()
                 ?? Directory.EnumerateFiles(path, "*.csproj", SearchOption.AllDirectories)
@@ -116,6 +139,36 @@ public sealed partial class CompilerService
 
         bool single = path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase);
         return new Target(path, Path.GetDirectoryName(path)!, single);
+    }
+
+    private static string? FindProjectNearSolution(string solutionPath)
+    {
+        var directory = Path.GetDirectoryName(solutionPath);
+        if (directory is null) return null;
+
+        var projects = Directory.EnumerateFiles(directory, "*.csproj", SearchOption.AllDirectories)
+            .Where(file =>
+                !file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase) &&
+                !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        return projects.FirstOrDefault(IsExecutableProject) ?? projects.FirstOrDefault();
+    }
+
+    private static bool IsExecutableProject(string projectPath)
+    {
+        try
+        {
+            var outputType = XDocument.Load(projectPath)
+                .Descendants()
+                .FirstOrDefault(element => element.Name.LocalName.Equals("OutputType", StringComparison.OrdinalIgnoreCase))
+                ?.Value.Trim();
+            return string.Equals(outputType, "Exe", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(outputType, "WinExe", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or XmlException)
+        {
+            return false;
+        }
     }
 
     private static List<BuildDiagnostic> ParseDiagnostics(string text)

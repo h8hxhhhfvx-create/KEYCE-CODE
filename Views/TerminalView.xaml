@@ -21,6 +21,12 @@
         <!-- En-tête du terminal -->
         <DockPanel Grid.Row="0" Margin="6">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <ComboBox ItemsSource="{Binding ShellProfiles}"
+                          SelectedItem="{Binding ShellProfile, UpdateSourceTrigger=PropertyChanged}"
+                          Width="110"
+                          Margin="0,0,6,0"
+                          Background="#3C3C3C"
+                          Foreground="White"/>
                 <Button Content="■ Arrêter" Command="{Binding StopCommand}" Style="{StaticResource ConsoleButtonStyle}"/>
                 <Button Content="Effacer" Command="{Binding ClearCommand}" Style="{StaticResource ConsoleButtonStyle}" Margin="0"/>
             </StackPanel>

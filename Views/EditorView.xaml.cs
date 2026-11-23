@@ -4,7 +4,9 @@ using System.Windows.Input;
 using ICSharpCode.AvalonEdit.CodeCompletion;
 using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Editing;
+using ICSharpCode.AvalonEdit.Folding;
 using ICSharpCode.AvalonEdit.Rendering;
+using ICSharpCode.AvalonEdit;
 using KeyceCode.Models;
 using KeyceCode.Services;
 using WpfUserControl = System.Windows.Controls.UserControl;
@@ -23,11 +25,16 @@ public partial class EditorView : WpfUserControl
     private bool examMode;
     private readonly DiagnosticUnderlineRenderer diagnosticRenderer = new();
     private readonly DiagnosticMargin diagnosticMargin = new();
+    private readonly BraceFoldingStrategy foldingStrategy = new();
+    private FoldingManager? foldingManager;
     private IReadOnlyList<DiagnosticMarker> diagnosticMarkers = [];
+    private string commentPrefix = "//";
+    private TextViewPosition? rectangleAnchor;
 
     public EditorView()
     {
         InitializeComponent();
+        foldingManager = FoldingManager.Install(Editor.TextArea);
         highlightingService.Apply(Editor);
         Editor.TextArea.TextView.BackgroundRenderers.Add(diagnosticRenderer);
         Editor.TextArea.LeftMargins.Insert(0, diagnosticMargin);
@@ -79,6 +86,12 @@ public partial class EditorView : WpfUserControl
         }
     }
 
+    public bool IsReadOnly
+    {
+        get => Editor.IsReadOnly;
+        set => Editor.IsReadOnly = value;
+    }
+
     public int SelectionStart
     {
         get => Editor.SelectionStart;
@@ -108,6 +121,42 @@ public partial class EditorView : WpfUserControl
     public void ReplaceText(string text)
     {
         Editor.Document.Replace(0, Editor.Document.TextLength, text ?? string.Empty);
+        Editor.Focus();
+    }
+
+    public void ToggleLineComment()
+    {
+        if (Editor.Document.LineCount == 0) return;
+        var start = Editor.SelectionStart;
+        var end = Math.Max(start, start + Editor.SelectionLength);
+        var first = Editor.Document.GetLineByOffset(Math.Clamp(start, 0, Editor.Document.TextLength));
+        var last = Editor.Document.GetLineByOffset(Math.Clamp(end, 0, Editor.Document.TextLength));
+        var lines = Enumerable.Range(first.LineNumber, last.LineNumber - first.LineNumber + 1)
+            .Select(Editor.Document.GetLineByNumber)
+            .ToArray();
+        var nonEmpty = lines.Where(line => line.Length > 0).ToArray();
+        var uncomment = nonEmpty.Length > 0 && nonEmpty.All(line =>
+            Editor.Document.GetText(line.Offset, line.Length).TrimStart().StartsWith(commentPrefix, StringComparison.Ordinal));
+
+        foreach (var line in lines.Reverse())
+        {
+            var text = Editor.Document.GetText(line.Offset, line.Length);
+            if (text.Trim().Length == 0) continue;
+            var indentation = text.Length - text.TrimStart().Length;
+            var contentOffset = line.Offset + indentation;
+            if (uncomment)
+            {
+                var removeLength = commentPrefix.Length;
+                if (contentOffset + removeLength < line.EndOffset && Editor.Document.GetCharAt(contentOffset + removeLength) == ' ')
+                    removeLength++;
+                Editor.Document.Remove(contentOffset, Math.Min(removeLength, line.EndOffset - contentOffset));
+            }
+            else
+            {
+                Editor.Document.Insert(contentOffset, commentPrefix + " ");
+            }
+        }
+        UpdateFolding();
         Editor.Focus();
     }
 
@@ -189,14 +238,44 @@ public partial class EditorView : WpfUserControl
     private void OnTextChanged(object? sender, EventArgs e)
     {
         UpdateMiniMap();
+        UpdateFolding();
         if (!suppressChanges) ContentChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public void ApplyLanguage(string? extension) => highlightingService.Apply(Editor, extension);
+    public void ApplyLanguage(string? extension)
+    {
+        var normalized = extension?.Trim().ToLowerInvariant();
+        commentPrefix = normalized switch
+        {
+            ".py" or ".ps1" or ".rb" or ".sh" => "#",
+            ".html" or ".htm" or ".xml" or ".xaml" => "<!--",
+            _ => "//"
+        };
+        highlightingService.Apply(Editor, extension);
+        UpdateFolding();
+    }
+
+    private void UpdateFolding()
+    {
+        if (foldingManager is null) return;
+        foldingManager.UpdateFoldings(foldingStrategy.CreateNewFoldings(Editor.Document, out _), -1);
+    }
 
     public void ApplyAppearance(AppSettings settings)
     {
         var dark = !string.Equals(settings.Theme, "Light", StringComparison.OrdinalIgnoreCase);
+        ApplyThemeColors(dark);
+        Editor.FontSize = Math.Clamp(settings.EditorFontSize, 8, 32);
+        indentSize = Math.Clamp(settings.TabSize, 1, 16);
+        Editor.Options.IndentationSize = indentSize;
+        Editor.Options.ConvertTabsToSpaces = true;
+        Editor.WordWrap = settings.WordWrap;
+    }
+
+    public void SetTheme(bool dark) => ApplyThemeColors(dark);
+
+    private void ApplyThemeColors(bool dark)
+    {
         var background = dark ? "#1E2128" : "#FAFAFA";
         var foreground = dark ? "#DCDCDC" : "#202020";
         var minimapBackground = dark ? "#181A20" : "#F0F2F5";
@@ -207,11 +286,6 @@ public partial class EditorView : WpfUserControl
         MiniMapBorder.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(minimapBackground));
         MiniMapScrollViewer.Background = MiniMapBorder.Background;
         MiniMapText.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(minimapForeground));
-        Editor.FontSize = Math.Clamp(settings.EditorFontSize, 8, 32);
-        indentSize = Math.Clamp(settings.TabSize, 1, 16);
-        Editor.Options.IndentationSize = indentSize;
-        Editor.Options.ConvertTabsToSpaces = true;
-        Editor.WordWrap = settings.WordWrap;
     }
 
     public void SetExamMode(bool enabled) => examMode = enabled;
@@ -295,12 +369,33 @@ public partial class EditorView : WpfUserControl
 
     private void OnEditorKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        var modifiers = System.Windows.Input.Keyboard.Modifiers;
+        if (modifiers == (System.Windows.Input.ModifierKeys.Alt | System.Windows.Input.ModifierKeys.Shift) &&
+            e.Key is System.Windows.Input.Key.Down or System.Windows.Input.Key.Up)
+        {
+            ExtendRectangleSelection(e.Key == System.Windows.Input.Key.Down ? 1 : -1);
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == System.Windows.Input.Key.Space &&
-            System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Control))
+            modifiers.HasFlag(System.Windows.Input.ModifierKeys.Control))
         {
             ShowCompletion();
             e.Handled = true;
         }
+    }
+
+    private void ExtendRectangleSelection(int direction)
+    {
+        var current = new TextViewPosition(Editor.Document.GetLocation(Editor.CaretOffset));
+        rectangleAnchor ??= current;
+        var targetLine = Math.Clamp(current.Line + direction, 1, Editor.Document.LineCount);
+        var targetLocation = new TextLocation(targetLine, Math.Max(1, current.Column));
+        var target = new TextViewPosition(targetLocation);
+        Editor.CaretOffset = Editor.Document.GetOffset(targetLocation);
+        Editor.TextArea.Selection = new RectangleSelection(Editor.TextArea, rectangleAnchor.Value, target);
+        Editor.Focus();
     }
 
     private bool GetCurrentLineStartsWithClosingBrace(int offset)
@@ -333,6 +428,30 @@ public partial class EditorView : WpfUserControl
         public void Complete(TextArea textArea, ISegment completionSegment, EventArgs insertionRequestEventArgs)
         {
             textArea.Document.Replace(completionSegment, suggestion.InsertText);
+        }
+    }
+
+    private sealed class BraceFoldingStrategy
+    {
+        public IEnumerable<NewFolding> CreateNewFoldings(TextDocument document, out int firstErrorOffset)
+        {
+            firstErrorOffset = -1;
+            var stack = new Stack<int>();
+            var foldings = new List<NewFolding>();
+            for (var offset = 0; offset < document.TextLength; offset++)
+            {
+                var character = document.GetCharAt(offset);
+                if (character == '{') stack.Push(offset);
+                else if (character == '}' && stack.Count > 0)
+                {
+                    var start = stack.Pop();
+                    var startLine = document.GetLineByOffset(start);
+                    var endLine = document.GetLineByOffset(offset);
+                    if (startLine.LineNumber < endLine.LineNumber)
+                        foldings.Add(new NewFolding(start, offset + 1) { Name = "…" });
+                }
+            }
+            return foldings.OrderBy(folding => folding.StartOffset);
         }
     }
 

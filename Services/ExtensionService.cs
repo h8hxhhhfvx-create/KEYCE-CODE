@@ -26,14 +26,16 @@ public sealed class ExtensionService
         var results = new List<ExtensionDescriptor>();
         foreach (var assemblyPath in Directory.EnumerateFiles(ExtensionsDirectory, "*.dll", SearchOption.TopDirectoryOnly).OrderBy(path => path))
         {
+            AssemblyLoadContext? loadContext = null;
             try
             {
-                var loadContext = new ExtensionLoadContext(Path.GetFileNameWithoutExtension(assemblyPath));
+                loadContext = new ExtensionLoadContext(Path.GetFileNameWithoutExtension(assemblyPath));
                 var assembly = loadContext.LoadFromAssemblyPath(Path.GetFullPath(assemblyPath));
                 var types = assembly.GetTypes().Where(type => typeof(IKeyceExtension).IsAssignableFrom(type) && !type.IsAbstract && type.GetConstructor(Type.EmptyTypes) is not null).ToArray();
                 if (types.Length == 0)
                 {
                     loadContext.Unload();
+                    loadContext = null;
                     results.Add(new ExtensionDescriptor(Path.GetFileNameWithoutExtension(assemblyPath), assemblyPath, false, "Aucune classe IKeyceExtension trouvée."));
                     continue;
                 }
@@ -42,9 +44,14 @@ public sealed class ExtensionService
                 foreach (var extension in instances)
                     extension.Initialize(context);
                 loadContexts.Add(loadContext);
+                loadContext = null;
                 results.Add(new ExtensionDescriptor(string.Join(", ", instances.Select(extension => extension.Name)), assemblyPath, true, null));
             }
-            catch (Exception ex) { results.Add(new ExtensionDescriptor(Path.GetFileNameWithoutExtension(assemblyPath), assemblyPath, false, ex.Message)); }
+            catch (Exception ex)
+            {
+                loadContext?.Unload();
+                results.Add(new ExtensionDescriptor(Path.GetFileNameWithoutExtension(assemblyPath), assemblyPath, false, ex.Message));
+            }
         }
         return results;
     }

@@ -32,6 +32,7 @@ public sealed class ProjectServiceTests : IDisposable
         Assert.Equal(root, project.RootPath);
         Assert.Equal(solutionPath, project.EntryFilePath);
         Assert.Contains(allFiles, file => file.Name == "CodeFile.cs");
+        Assert.Single(allFiles, file => string.Equals(file.FullPath, Path.Combine(root, "Models", "CodeFile.cs"), StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(allFiles, file => new[] { "bin", "obj", ".git", ".vs", "node_modules" }.Contains(file.Name));
     }
 

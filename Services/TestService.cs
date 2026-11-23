@@ -23,6 +23,14 @@ public sealed partial class TestService
             }
         };
         if (!process.Start()) throw new InvalidOperationException("Impossible de démarrer dotnet test.");
+        using var cancellationRegistration = cancellationToken.Register(() =>
+        {
+            try
+            {
+                if (!process.HasExited) process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException) { }
+        });
         var stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
         var stderr = process.StandardError.ReadToEndAsync(cancellationToken);
         await process.WaitForExitAsync(cancellationToken);
@@ -37,9 +45,16 @@ public sealed partial class TestService
     private static string ResolveTarget(string path)
     {
         var full = Path.GetFullPath(path.Trim().Trim('"'));
-        if (File.Exists(full) && full.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)) return full;
+        if (File.Exists(full) &&
+            (full.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) ||
+             full.EndsWith(".sln", StringComparison.OrdinalIgnoreCase) ||
+             full.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase))) return full;
         if (Directory.Exists(full))
         {
+            var solution = Directory.EnumerateFiles(full, "*.slnx", SearchOption.TopDirectoryOnly).FirstOrDefault()
+                ?? Directory.EnumerateFiles(full, "*.sln", SearchOption.TopDirectoryOnly).FirstOrDefault();
+            if (solution is not null) return solution;
+
             var project = Directory.EnumerateFiles(full, "*.csproj", SearchOption.TopDirectoryOnly).FirstOrDefault()
                 ?? Directory.EnumerateFiles(full, "*.csproj", SearchOption.AllDirectories).FirstOrDefault();
             if (project is not null) return project;
