@@ -19,6 +19,34 @@ public sealed class GitService
     }
 
     public Task StageAsync(IEnumerable<string> paths, CancellationToken ct = default) => RunCheckedAsync(["add", "--", .. paths], ct);
+    public Task UnstageAsync(IEnumerable<string> paths, CancellationToken ct = default) => RunCheckedAsync(["restore", "--staged", "--", .. paths], ct);
+
+    public async Task<string> GetDiffAsync(string? path = null, bool staged = false, CancellationToken ct = default)
+    {
+        List<string> args = staged ? ["diff", "--cached", "--no-ext-diff"] : ["diff", "--no-ext-diff"];
+        if (!string.IsNullOrWhiteSpace(path)) args.AddRange(["--", path]);
+        var result = await RunAsync(args, ct);
+        if (result.ExitCode != 0) throw new InvalidOperationException(result.StdErr.Trim());
+        return result.StdOut;
+    }
+
+    public async Task<IReadOnlyList<GitCommit>> GetHistoryAsync(int limit = 100, CancellationToken ct = default)
+    {
+        if (limit is < 1 or > 1000) throw new ArgumentOutOfRangeException(nameof(limit));
+        var format = "%H%x1f%an%x1f%aI%x1f%s%x1e";
+        var result = await RunAsync(["log", $"-n{limit}", $"--format={format}"], ct);
+        if (result.ExitCode != 0) throw new InvalidOperationException(result.StdErr.Trim());
+
+        var commits = new List<GitCommit>();
+        foreach (var record in result.StdOut.Split('\x1e', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var fields = record.Trim('\r', '\n').Split('\x1f');
+            if (fields.Length < 4 || !DateTimeOffset.TryParse(fields[2], out var date)) continue;
+            commits.Add(new GitCommit(fields[0], fields[1], date, fields[3]));
+        }
+        return commits;
+    }
+
     public Task CommitAsync(string message, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(message)) throw new ArgumentException("Le message du commit est vide.", nameof(message));
@@ -26,6 +54,29 @@ public sealed class GitService
     }
     public Task PullAsync(CancellationToken ct = default) => RunCheckedAsync(["pull", "--ff-only"], ct);
     public Task PushAsync(CancellationToken ct = default) => RunCheckedAsync(["push"], ct);
+    public Task FetchAsync(string? remote = null, CancellationToken ct = default) =>
+        RunCheckedAsync(string.IsNullOrWhiteSpace(remote) ? ["fetch", "--prune"] : ["fetch", "--prune", remote.Trim()], ct);
+
+    public Task StashPushAsync(string? message = null, CancellationToken ct = default)
+    {
+        var args = new List<string> { "stash", "push", "--include-untracked" };
+        if (!string.IsNullOrWhiteSpace(message)) args.AddRange(["-m", message.Trim()]);
+        return RunCheckedAsync(args, ct);
+    }
+
+    public Task StashPopAsync(CancellationToken ct = default) => RunCheckedAsync(["stash", "pop"], ct);
+
+    public Task MergeAsync(string branch, CancellationToken ct = default)
+    {
+        ValidateBranchName(branch);
+        return RunCheckedAsync(["merge", "--no-edit", branch.Trim()], ct);
+    }
+
+    public Task RebaseAsync(string branch, CancellationToken ct = default)
+    {
+        ValidateBranchName(branch);
+        return RunCheckedAsync(["rebase", branch.Trim()], ct);
+    }
 
     public async Task<IReadOnlyList<GitBranch>> GetBranchesAsync(CancellationToken cancellationToken = default)
     {
@@ -80,7 +131,12 @@ public sealed class GitService
 
     private static void ValidateBranchName(string name)
     {
-        if (string.IsNullOrWhiteSpace(name) || name.Any(char.IsWhiteSpace) || name.StartsWith('-'))
+        if (string.IsNullOrWhiteSpace(name) || !string.Equals(name, name.Trim(), StringComparison.Ordinal) ||
+            name.StartsWith('-') || name.StartsWith('/') || name.EndsWith('/') || name.EndsWith('.') ||
+            name.Contains("..", StringComparison.Ordinal) || name.Contains("//", StringComparison.Ordinal) ||
+            name.Contains("@{", StringComparison.Ordinal) || name == "@" ||
+            name.Any(character => char.IsControl(character) || char.IsWhiteSpace(character) ||
+                character is '~' or '^' or ':' or '?' or '*' or '[' or '\\'))
             throw new ArgumentException("Nom de branche Git invalide.", nameof(name));
     }
 

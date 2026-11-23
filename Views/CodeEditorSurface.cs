@@ -4,7 +4,7 @@ using KeyceCode.Models;
 
 namespace KeyceCode.Views;
 
-internal sealed class CodeEditorSurface : UserControl
+internal sealed class CodeEditorSurface : UserControl, ICodeEditorSurface
 {
     private readonly ElementHost host = new() { Dock = DockStyle.Fill };
     private readonly EditorView editorView = new();
@@ -36,6 +36,13 @@ internal sealed class CodeEditorSurface : UserControl
         set => editorView.IsModified = value;
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool IsReadOnly
+    {
+        get => editorView.IsReadOnly;
+        set => editorView.IsReadOnly = value;
+    }
+
     public (int Line, int Column) CaretPosition => editorView.CaretPosition;
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -54,6 +61,7 @@ internal sealed class CodeEditorSurface : UserControl
 
     public void Select(int start, int length) => editorView.Select(start, length);
     public void ApplyLanguage(string? extension) => editorView.ApplyLanguage(extension);
+    public void SetDiagnostics(IEnumerable<Diagnostic> diagnostics) => editorView.SetDiagnostics(diagnostics);
     public void ApplyAppearance(AppSettings settings) => editorView.ApplyAppearance(settings);
     public void Undo() => editorView.Undo();
     public void Redo() => editorView.Redo();
@@ -61,8 +69,13 @@ internal sealed class CodeEditorSurface : UserControl
     public void Copy() => editorView.Copy();
     public void Paste() => editorView.Paste();
     public void ReplaceText(string text) => editorView.ReplaceText(text);
+    public void ToggleLineComment() => editorView.ToggleLineComment();
 
-    public void SetExamMode(bool enabled) => examMode = enabled;
+    public void SetExamMode(bool enabled)
+    {
+        examMode = enabled;
+        editorView.SetExamMode(enabled);
+    }
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {

@@ -6,6 +6,7 @@ namespace KeyceCode.Views;
 public sealed class ExplorerView : UserControl
 {
     private readonly ProjectViewModel viewModel;
+    private IReadOnlyDictionary<string, GitFileStatus> gitStatuses = new Dictionary<string, GitFileStatus>(StringComparer.OrdinalIgnoreCase);
     private readonly TreeView tree = new()
     {
         Dock = DockStyle.Fill,
@@ -83,6 +84,14 @@ public sealed class ExplorerView : UserControl
         catch (Exception ex) { ShowError("Impossible d’actualiser l’explorateur", ex); }
     }
 
+    public void ApplyGitStatus(GitStatusSnapshot snapshot)
+    {
+        gitStatuses = snapshot.Files
+            .Where(file => !string.IsNullOrWhiteSpace(file.Path))
+            .ToDictionary(file => Path.GetFullPath(Path.Combine(viewModel.CurrentProject?.RootPath ?? string.Empty, file.Path)), StringComparer.OrdinalIgnoreCase);
+        RenderProject();
+    }
+
     public void ApplyTheme(bool dark)
     {
         var background = dark ? Color.FromArgb(30, 33, 40) : Color.FromArgb(248, 249, 251);
@@ -113,11 +122,29 @@ public sealed class ExplorerView : UserControl
         tree.EndUpdate();
     }
 
-    private static TreeNode AddNode(CodeFile file)
+    private TreeNode AddNode(CodeFile file)
     {
-        var node = new TreeNode(file.Name) { Tag = file };
+        var status = gitStatuses.TryGetValue(Path.GetFullPath(file.FullPath), out var fileStatus) ? fileStatus : null;
+        var marker = status is null ? string.Empty : $" [{GitMarker(status)}]";
+        var node = new TreeNode(file.Name + marker) { Tag = file };
+        if (status is not null)
+            node.ForeColor = GitColor(status);
         foreach (var child in file.Children) node.Nodes.Add(AddNode(child));
         return node;
+    }
+
+    private static string GitMarker(GitFileStatus status)
+    {
+        if (status.IndexStatus == "?" || status.WorkTreeStatus == "?") return "?";
+        if (status.IndexStatus is not " ") return status.IndexStatus;
+        return status.WorkTreeStatus is not " " ? status.WorkTreeStatus : "";
+    }
+
+    private static Color GitColor(GitFileStatus status)
+    {
+        if (status.IndexStatus is not " ") return Color.LightGreen;
+        if (status.WorkTreeStatus is not " ") return Color.Khaki;
+        return Color.Gainsboro;
     }
 
     private ContextMenuStrip BuildContextMenu()

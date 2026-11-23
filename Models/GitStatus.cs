@@ -7,3 +7,4 @@ public sealed record GitFileStatus(string IndexStatus, string WorkTreeStatus, st
 
 public sealed record GitStatusSnapshot(string Branch, IReadOnlyList<GitFileStatus> Files);
 public sealed record GitBranch(string Name, bool IsCurrent);
+public sealed record GitCommit(string Hash, string Author, DateTimeOffset Date, string Subject);

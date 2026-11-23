@@ -38,39 +38,38 @@
                  ItemContainerStyle="{StaticResource ConsoleItemStyle}"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
 
-        <!-- Liste des erreurs / avertissements (double-clic = aller à la ligne) -->
-        <ListBox x:Name="DiagList"
-                 Grid.Row="2"
-                 MaxHeight="140"
-                 Background="#252526"
-                 BorderThickness="0,1,0,0"
-                 BorderBrush="#3C3C3C"
-                 ItemsSource="{Binding Diagnostics}"
-                 SelectedItem="{Binding SelectedDiagnostic}">
-            <ListBox.Style>
-                <Style TargetType="ListBox">
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding Diagnostics.Count}" Value="0">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </ListBox.Style>
-            <ListBox.InputBindings>
-                <MouseBinding MouseAction="LeftDoubleClick"
-                              Command="{Binding OpenDiagnosticCommand}"
-                              CommandParameter="{Binding SelectedDiagnostic}"/>
-            </ListBox.InputBindings>
-            <ListBox.ItemTemplate>
-                <DataTemplate>
-                    <TextBlock Text="{Binding Display}"
-                               Foreground="#F48771"
-                               FontFamily="Cascadia Mono, Consolas"
-                               FontSize="12"
-                               TextWrapping="Wrap"/>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
+        <!-- Problèmes : filtre, gravité, tri et double-clic pour aller à la ligne -->
+        <Grid Grid.Row="2" MaxHeight="190" Background="#252526">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <DockPanel Grid.Row="0" Margin="6,5,6,3">
+                <TextBlock Text="Problèmes" Foreground="#DCDCAA" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBox Width="190" Text="{Binding DiagnosticFilter, UpdateSourceTrigger=PropertyChanged}"
+                         Background="#3C3C3C" Foreground="White" CaretBrush="White"
+                         BorderThickness="0" Padding="4" ToolTip="Filtrer par fichier, code ou message"/>
+                <ComboBox Width="112" Margin="6,0,0,0" ItemsSource="{Binding DiagnosticSeverityOptions}"
+                          SelectedItem="{Binding DiagnosticSeverity}" ToolTip="Filtrer par gravité"/>
+                <ComboBox Width="102" Margin="6,0,0,0" ItemsSource="{Binding DiagnosticSortOptions}"
+                          SelectedItem="{Binding DiagnosticSort}" ToolTip="Trier les problèmes"/>
+                <TextBlock Text="{Binding VisibleDiagnosticCount, StringFormat=Total : {0}}" Foreground="#9CDCFE"
+                           VerticalAlignment="Center" Margin="10,0,0,0"/>
+            </DockPanel>
+            <ListBox x:Name="DiagList" Grid.Row="1" Background="#252526" BorderThickness="0"
+                     ItemsSource="{Binding DiagnosticsView}" SelectedItem="{Binding SelectedDiagnostic}">
+                <ListBox.InputBindings>
+                    <MouseBinding MouseAction="LeftDoubleClick" Command="{Binding OpenDiagnosticCommand}"
+                                  CommandParameter="{Binding SelectedDiagnostic}"/>
+                </ListBox.InputBindings>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding Display}" Foreground="#F48771"
+                                   FontFamily="Cascadia Mono, Consolas" FontSize="12" TextWrapping="Wrap"/>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
 
         <!-- Saisie clavier pour les programmes qui lisent la console (Console.ReadLine...) -->
         <DockPanel Grid.Row="3" Margin="6">
