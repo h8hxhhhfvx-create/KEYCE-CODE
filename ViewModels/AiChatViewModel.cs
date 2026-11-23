@@ -7,20 +7,25 @@ namespace KeyceCode.ViewModels;
 public sealed class AiChatViewModel : ViewModelBase
 {
     private readonly OllamaChatService chatService;
+    private readonly AiRouterService? aiRouter;
     private readonly AppSettings settings;
     private string inputText = string.Empty;
     private string contextText = string.Empty;
     private bool isBusy;
     private CancellationTokenSource? cancellation;
 
-    public AiChatViewModel(AppSettings settings, OllamaChatService? chatService = null)
+    public AiChatViewModel(AppSettings settings, OllamaChatService? chatService = null, AiRouterService? router = null)
     {
         this.settings = settings;
         this.chatService = chatService ?? new OllamaChatService();
+        aiRouter = router;
         SendCommand = new RelayCommand(() => _ = SendAsync(), () => !IsBusy && !string.IsNullOrWhiteSpace(InputText));
         StopCommand = new RelayCommand(() => cancellation?.Cancel(), () => IsBusy);
         ClearCommand = new RelayCommand(() => Messages.Clear());
-        Messages.Add(new AiChatLine("assistant", "Bonjour. Je peux vous aider sur le code du projet. Vérifiez qu’Ollama est démarré avec le modèle configuré."));
+        var providerMessage = aiRouter?.ProviderNames.Count > 0
+            ? "Les relais configurés sont : " + string.Join(", ", aiRouter.ProviderNames) + "."
+            : "Aucun relais Gemini/Groq n’est configuré : Ollama local sera utilisé.";
+        Messages.Add(new AiChatLine("assistant", "Bonjour. Je peux vous aider sur le code du projet. " + providerMessage));
     }
 
     public ObservableCollection<AiChatLine> Messages { get; } = new();
@@ -64,11 +69,27 @@ public sealed class AiChatViewModel : ViewModelBase
             if (!string.IsNullOrWhiteSpace(ContextText))
                 messages.Add(("user", "Contexte du fichier courant :\n```csharp\n" + ContextText + "\n```"));
             messages.AddRange(Messages.Where(line => line.Role is "user" or "assistant").TakeLast(12).Select(line => (line.Role, line.Content)));
-            var response = await chatService.ChatAsync(settings.OllamaEndpoint, settings.OllamaModel, messages, cancellation.Token);
+            string response;
+            if (aiRouter?.ProviderNames.Count > 0)
+            {
+                try
+                {
+                    response = (await aiRouter.ChatAsync(messages, cancellation.Token)).Content;
+                }
+                catch (InvalidOperationException) when (!cancellation.IsCancellationRequested)
+                {
+                    Messages.Add(new AiChatLine("assistant", "Les relais IA distants sont indisponibles. Tentative avec Ollama local…"));
+                    response = await chatService.ChatAsync(settings.OllamaEndpoint, settings.OllamaModel, messages, cancellation.Token);
+                }
+            }
+            else
+            {
+                response = await chatService.ChatAsync(settings.OllamaEndpoint, settings.OllamaModel, messages, cancellation.Token);
+            }
             Messages.Add(new AiChatLine("assistant", response));
         }
         catch (OperationCanceledException) { Messages.Add(new AiChatLine("assistant", "Réponse arrêtée.")); }
-        catch (Exception ex) { Messages.Add(new AiChatLine("assistant", $"Impossible de contacter Ollama : {ex.Message}")); }
+        catch (Exception ex) { Messages.Add(new AiChatLine("assistant", $"Impossible de contacter le service IA : {ex.Message}")); }
         finally
         {
             cancellation.Dispose();

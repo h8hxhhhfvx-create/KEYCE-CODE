@@ -11,22 +11,29 @@ namespace KeyceCode;
 
 public sealed class Form1 : Form
 {
-    private readonly TabControl tabs = new() { Dock = DockStyle.Fill, Appearance = TabAppearance.Normal };
+    private readonly TabControl tabs = new() { Dock = DockStyle.Fill, Appearance = TabAppearance.Normal, DrawMode = TabDrawMode.OwnerDrawFixed };
     private readonly ExplorerView explorer = new(new ProjectViewModel(new FileService(), new ProjectService()));
+    private readonly SourceControlView sourceControl = new();
     private readonly FileService fileService = new();
     private readonly SettingsService settingsService = new();
+    private readonly ISecretStore secretStore = new WindowsCredentialStore();
+    private AiRouterService aiRouter = new([]);
     private AppSettings settings = new();
     private readonly CodeAnalysisService codeAnalysisService = new();
+    private readonly LearningHintService learningHintService = new();
     private readonly FormatService formatService = new();
     private readonly CodeSymbolService codeSymbolService = new();
     private readonly CodeRenameService codeRenameService = new();
     private readonly SearchService searchService = new();
     private readonly AiAgentService aiAgentService = new();
     private readonly LanguageRunnerService languageRunnerService = new();
+    private readonly PreviewService previewService = new();
     private readonly ScriptRunnerService scriptRunnerService = new();
     private readonly TestService testService = new();
     private readonly DebuggerService debuggerService = new();
     private readonly ExtensionService extensionService = new();
+    private readonly GitHubAccountService githubAccountService = new();
+    private readonly LiveDiagnosticsCoordinator liveDiagnosticsCoordinator = new();
     private readonly List<DebugBreakpoint> debugBreakpoints = new();
     private GitService? gitService;
     private readonly List<(int Start, int End, int Line, int Column)> diagnosticRanges = new();
@@ -38,11 +45,15 @@ public sealed class Form1 : Form
     private AiChatViewModel? aiChatViewModel;
     private AiChatView? aiChatView;
     private TabControl? bottomTabs;
+    private TabControl? sideTabs;
     private MenuStrip? menuStrip;
     private ToolStripMenuItem? extensionsMenu;
     private ToolStripMenuItem? recentProjectsMenu;
     private ToolStripMenuItem? aiMenu;
     private ToolStrip? toolBar;
+    private Image? officialLogo;
+    private ContextMenuStrip? tabContextMenu;
+    private int contextTabIndex = -1;
     private StatusStrip? statusStrip;
     private readonly RichTextBox output = new() { Dock = DockStyle.Fill, ReadOnly = true, BackColor = Color.FromArgb(20, 22, 27), ForeColor = Color.Gainsboro, BorderStyle = BorderStyle.None, Font = new Font("Cascadia Mono", 10) };
     private Label? outputHeader;
@@ -53,17 +64,19 @@ public sealed class Form1 : Form
     public Form1()
     {
         settings = settingsService.Load();
-        aiChatViewModel = new AiChatViewModel(settings);
-        Text = "KeyceCode"; Width = 1280; Height = 800; MinimumSize = new Size(900, 600);
+        aiRouter = AiProviderFactory.Create(settings, secretStore);
+        aiChatViewModel = new AiChatViewModel(settings, router: aiRouter);
+        Text = "KEYCE CODE"; Width = 1280; Height = 800; MinimumSize = new Size(900, 600);
         BackColor = Color.FromArgb(37, 40, 48); ForeColor = Color.Gainsboro; StartPosition = FormStartPosition.CenterScreen;
         BuildLayout();
+        RestoreSession();
         output.MouseDoubleClick += Output_MouseDoubleClick;
         outputViewModel.DiagnosticActivated += OpenDiagnostic;
         debuggerService.OutputReceived += DebuggerOutputReceived;
         debuggerService.SnapshotUpdated += DebuggerSnapshotUpdated;
-        FormClosing += (_, e) => { if (tabs.TabPages.Cast<TabPage>().Any(t => !CanClose(t))) e.Cancel = true; };
+        FormClosing += OnFormClosing;
         scriptRunnerService.OutputReceived += ScriptOutputReceived;
-        FormClosed += async (_, _) => { liveAnalysisCancellation?.Cancel(); outputViewModel.Stop(); terminalViewModel.Stop(); scriptRunnerService.Stop(); await debuggerService.DisposeAsync(); };
+        FormClosed += async (_, _) => { liveAnalysisCancellation?.Cancel(); liveDiagnosticsCoordinator.Dispose(); outputViewModel.Stop(); terminalViewModel.Stop(); scriptRunnerService.Stop(); await debuggerService.DisposeAsync(); officialLogo?.Dispose(); };
     }
 
     private void BuildLayout()
@@ -127,14 +140,26 @@ public sealed class Form1 : Form
         Add(runMenu, "Sortir de la fonction", async (_, _) => await StepDebuggingAsync("out"), Keys.Shift | Keys.F11);
         var gitMenu = new ToolStripMenuItem("Git");
         Add(gitMenu, "Actualiser l’état", async (_, _) => await RefreshGitStatusAsync());
+        Add(gitMenu, "Afficher le diff", async (_, _) => await ShowGitDiffAsync(false));
+        Add(gitMenu, "Afficher le diff indexé", async (_, _) => await ShowGitDiffAsync(true));
+        Add(gitMenu, "Afficher l’historique", async (_, _) => await ShowGitHistoryAsync());
         Add(gitMenu, "Créer un commit…", async (_, _) => await CommitChangesAsync());
+        Add(gitMenu, "Récupérer (fetch)", async (_, _) => await FetchGitAsync());
         Add(gitMenu, "Tirer les changements", async (_, _) => await PullGitAsync());
         Add(gitMenu, "Envoyer les changements", async (_, _) => await PushGitAsync());
+        Add(gitMenu, "Mettre de côté (stash)…", async (_, _) => await StashGitAsync());
+        Add(gitMenu, "Restaurer le stash", async (_, _) => await StashPopGitAsync());
+        Add(gitMenu, "Fusionner une branche…", async (_, _) => await MergeGitAsync());
+        Add(gitMenu, "Rebaser sur une branche…", async (_, _) => await RebaseGitAsync());
         Add(gitMenu, "Lister les branches", async (_, _) => await ListGitBranchesAsync());
         Add(gitMenu, "Créer une branche…", async (_, _) => await CreateGitBranchAsync());
         Add(gitMenu, "Changer de branche…", async (_, _) => await CheckoutGitBranchAsync());
+        gitMenu.DropDownItems.Add(new ToolStripSeparator());
+        Add(gitMenu, "Connecter un compte GitHub (facultatif)…", async (_, _) => await ConnectGitHubAsync());
+        Add(gitMenu, "Gérer les comptes GitHub…", async (_, _) => await ManageGitHubAccountsAsync());
         var aiMenu = new ToolStripMenuItem("IA");
         this.aiMenu = aiMenu;
+        Add(aiMenu, "Configurer Gemini/Groq…", (_, _) => ConfigureAi());
         Add(aiMenu, "Configurer Ollama…", (_, _) => ConfigureOllama());
         Add(aiMenu, "Agent : proposer une modification…", async (_, _) => await GenerateAgentPlanAsync());
         Add(aiMenu, "Agent : annuler la dernière modification", async (_, _) => await RestoreAgentPlanAsync());
@@ -152,13 +177,27 @@ public sealed class Form1 : Form
 
         var bar = new ToolStrip { BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro, GripStyle = ToolStripGripStyle.Hidden, Padding = new Padding(6, 3, 6, 3), Height = 34, Renderer = new ToolStripProfessionalRenderer(new DarkColors()) };
         toolBar = bar;
+        officialLogo = LoadOfficialLogo();
+        if (officialLogo is not null)
+        {
+            bar.Items.Add(new ToolStripLabel { Image = officialLogo, ImageScaling = ToolStripItemImageScaling.None, ToolTipText = "KEYCE CODE" });
+            bar.Items.Add(new ToolStripSeparator());
+        }
         Button(bar, "＋ Nouveau", () => NewFile()); Button(bar, "Ouvrir", OpenFile); Button(bar, "Projet C#", OpenProject); Button(bar, "Dossier", OpenWorkspace); Button(bar, "Enregistrer", SaveCurrent);
         bar.Items.Add(new ToolStripSeparator()); Button(bar, "▶ Exécuter (F5)", async () => await RunCurrent());
         Button(bar, "🔨 Compiler", CompileProject); Button(bar, "▶ Projet", RunProject);
         Button(bar, "🧪 Tests", async () => await RunTestsAsync()); Button(bar, "🔍 Analyser", AnalyzeCurrent);
 
         var split = new SplitContainer { Size = new Size(1200, 700), Dock = DockStyle.Fill, SplitterDistance = 260, BackColor = Color.FromArgb(37, 40, 48), Panel1MinSize = 180, Panel2MinSize = 400 };
-        split.Panel1.Controls.Add(explorer);
+        sideTabs = new TabControl { Dock = DockStyle.Fill, Appearance = TabAppearance.Normal, BackColor = Color.FromArgb(30, 33, 40), ForeColor = Color.Gainsboro };
+        sideTabs.TabPages.Add(new TabPage("Explorateur") { Controls = { explorer } });
+        sideTabs.TabPages.Add(new TabPage("Contrôle source") { Controls = { sourceControl } });
+        split.Panel1.Controls.Add(sideTabs);
+        sourceControl.RefreshRequested += async () => await RefreshGitStatusAsync();
+        sourceControl.StageRequested += async path => await StageGitPathAsync(path);
+        sourceControl.UnstageRequested += async path => await UnstageGitPathAsync(path);
+        sourceControl.DiffRequested += async (path, staged) => await ShowGitFileDiffAsync(path, staged);
+        sourceControl.CommitRequested += async () => await CommitStagedChangesAsync();
         explorer.FileOpenRequested += OpenPath;
         explorer.ProjectOpened += project =>
         {
@@ -173,6 +212,7 @@ public sealed class Form1 : Form
         // les barres d'actions et les champs de saisie doivent rester entièrement
         // visibles, même lorsque la fenêtre n'est pas maximisée.
         var editorOutput = new SplitContainer { Size = new Size(900, 700), Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 520, BackColor = Color.FromArgb(37, 40, 48), Panel1MinSize = 180, Panel2MinSize = 220 };
+        ConfigureTabInteractions();
         editorOutput.Panel1.Controls.Add(tabs);
         var outputPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(20, 22, 27) };
         outputPanel.Controls.Add(output);
@@ -198,6 +238,82 @@ public sealed class Form1 : Form
         ApplyPedagogicalMode();
     }
 
+    private static Image? LoadOfficialLogo()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Assets", "Brand", "keyce-code-official.jpeg");
+        if (!File.Exists(path)) return null;
+
+        try
+        {
+            using var source = Image.FromFile(path);
+            return new Bitmap(source, new Size(26, 26));
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static Image? LoadOfficialLogoLarge()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Assets", "Brand", "keyce-code-official.jpeg");
+        if (!File.Exists(path)) return null;
+
+        try
+        {
+            using var source = Image.FromFile(path);
+            return new Bitmap(source);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void RestoreSession()
+    {
+        try
+        {
+            if (settings.LastWorkspace is { } root && Directory.Exists(root))
+                explorer.OpenProject(root);
+
+            foreach (var path in settings.OpenFiles.Where(File.Exists))
+                OpenPath(path);
+            if (tabs.TabCount > 1 || tabs.SelectedTab?.Tag is not null)
+                status.Text = "Session précédente restaurée.";
+        }
+        catch (Exception ex)
+        {
+            status.Text = "Session partiellement restaurée : " + ex.Message;
+        }
+    }
+
+    private void OnFormClosing(object? sender, FormClosingEventArgs e)
+    {
+        if (tabs.TabPages.Cast<TabPage>().Any(page => !CanClose(page)))
+        {
+            e.Cancel = true;
+            return;
+        }
+
+        try
+        {
+            settings.LastWorkspace = workspace is not null && Directory.Exists(workspace) ? workspace : null;
+            settings.OpenFiles = tabs.TabPages.Cast<TabPage>()
+                .Select(PathOf)
+                .Where(path => path is not null && File.Exists(path))
+                .Select(path => Path.GetFullPath(path!))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(20)
+                .ToList();
+            settingsService.Save(settings);
+        }
+        catch (Exception ex)
+        {
+            status.Text = "Impossible de sauvegarder la session : " + ex.Message;
+        }
+    }
+
     private static TabPage CreateWpfTab(string title, System.Windows.Controls.UserControl view)
     {
         var host = new ElementHost { Dock = DockStyle.Fill, Child = view };
@@ -214,6 +330,24 @@ public sealed class Form1 : Form
         {
             terminalViewModel.SetWorkingDirectory(directory);
             gitService = new GitService(directory);
+            sourceControl.ClearRepository();
+            _ = RefreshGitDecorationsAsync();
+        }
+    }
+
+    private async Task RefreshGitDecorationsAsync()
+    {
+        if (gitService is null) return;
+        try
+        {
+            var snapshot = await gitService.GetStatusAsync();
+            explorer.ApplyGitStatus(snapshot);
+            sourceControl.ApplySnapshot(snapshot);
+        }
+        catch
+        {
+            sourceControl.ClearRepository();
+            /* Un dossier peut ne pas être un dépôt Git. */
         }
     }
 
@@ -223,6 +357,8 @@ public sealed class Form1 : Form
         try
         {
             var snapshot = await gitService.GetStatusAsync();
+            explorer.ApplyGitStatus(snapshot);
+            sourceControl.ApplySnapshot(snapshot);
             SelectBottomTab("Sortie");
             output.Clear();
             output.AppendText($"Branche : {snapshot.Branch}\r\n");
@@ -230,6 +366,76 @@ public sealed class Form1 : Form
                 ? "Dépôt propre.\r\n"
                 : string.Join("\r\n", snapshot.Files.Select(file => file.Display)) + "\r\n");
             status.Text = $"Git : {snapshot.Branch}, {snapshot.Files.Count} fichier(s) modifié(s).";
+        }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task StageGitPathAsync(string path)
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        try { await gitService.StageAsync([path]); await RefreshGitStatusAsync(); }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git — indexer", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task UnstageGitPathAsync(string path)
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        try { await gitService.UnstageAsync([path]); await RefreshGitStatusAsync(); }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git — désindexer", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task ShowGitFileDiffAsync(string path, bool staged)
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        try
+        {
+            var diff = await gitService.GetDiffAsync(path, staged);
+            SelectBottomTab("Sortie");
+            output.Text = string.IsNullOrWhiteSpace(diff) ? "Aucun changement à afficher.\r\n" : diff;
+            status.Text = staged ? $"Git : diff indexé de {path}." : $"Git : diff de {path}.";
+        }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git — diff", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task CommitStagedChangesAsync()
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        var message = Microsoft.VisualBasic.Interaction.InputBox("Message du commit (changements indexés uniquement) :", "Git — créer un commit");
+        if (string.IsNullOrWhiteSpace(message)) return;
+        try
+        {
+            await gitService.CommitAsync(message);
+            await RefreshGitStatusAsync();
+            status.Text = "Git : commit créé à partir des changements indexés.";
+        }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git — commit", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task ShowGitDiffAsync(bool staged)
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        try
+        {
+            var diff = await gitService.GetDiffAsync(staged: staged);
+            SelectBottomTab("Sortie");
+            output.Text = string.IsNullOrWhiteSpace(diff) ? "Aucun changement à afficher.\r\n" : diff;
+            status.Text = staged ? "Git : diff indexé affiché." : "Git : diff affiché.";
+        }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task ShowGitHistoryAsync()
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        try
+        {
+            var history = await gitService.GetHistoryAsync();
+            SelectBottomTab("Sortie");
+            output.Text = history.Count == 0
+                ? "Aucun commit dans ce dépôt.\r\n"
+                : string.Join(Environment.NewLine, history.Select(commit =>
+                    $"{commit.Hash[..Math.Min(8, commit.Hash.Length)]}  {commit.Date:yyyy-MM-dd HH:mm}  {commit.Author} — {commit.Subject}")) + Environment.NewLine;
+            status.Text = $"Git : {history.Count} commit(s) affiché(s).";
         }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
@@ -276,6 +482,45 @@ public sealed class Form1 : Form
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 
+    private async Task ConnectGitHubAsync()
+    {
+        var consent = MessageBox.Show(this,
+            "La connexion est facultative. KEYCE CODE va ouvrir l’authentification officielle de Git Credential Manager.\r\n\r\nAucun mot de passe ni jeton ne sera lu ou enregistré par KEYCE CODE.",
+            "Connecter GitHub", MessageBoxButtons.OKCancel, MessageBoxIcon.Information);
+        if (consent != DialogResult.OK) return;
+        try
+        {
+            status.Text = "GitHub : authentification en cours…";
+            await githubAccountService.LoginAsync();
+            var accounts = await githubAccountService.ListAccountsAsync();
+            status.Text = accounts.Count == 0 ? "GitHub : aucun compte connecté." : $"GitHub : {accounts.Count} compte(s) connecté(s).";
+            MessageBox.Show(this, accounts.Count == 0 ? "La connexion GitHub n’a pas été détectée." : $"Compte(s) disponible(s) : {string.Join(", ", accounts.Select(account => account.Login))}", "GitHub", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "GitHub", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task ManageGitHubAccountsAsync()
+    {
+        try
+        {
+            var accounts = await githubAccountService.ListAccountsAsync();
+            if (accounts.Count == 0)
+            {
+                var connect = MessageBox.Show(this, "Aucun compte GitHub n’est connecté. Voulez-vous en connecter un ?", "GitHub", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                if (connect == DialogResult.Yes) await ConnectGitHubAsync();
+                return;
+            }
+            var list = string.Join(Environment.NewLine, accounts.Select(account => "• " + account.Login));
+            var logout = MessageBox.Show(this, $"Comptes GitHub détectés :\r\n\r\n{list}\r\n\r\nOui : déconnecter un compte\r\nNon : conserver les comptes", "Comptes GitHub", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+            if (logout != DialogResult.Yes) return;
+            var login = Microsoft.VisualBasic.Interaction.InputBox("Nom du compte à déconnecter :", "GitHub — déconnexion", accounts[0].Login);
+            if (string.IsNullOrWhiteSpace(login)) return;
+            await githubAccountService.LogoutAsync(login);
+            status.Text = $"GitHub : {login.Trim()} déconnecté.";
+        }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "GitHub", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
     private async Task PullGitAsync()
     {
         if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
@@ -288,6 +533,46 @@ public sealed class Form1 : Form
         if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
         try { await gitService.PushAsync(); await RefreshGitStatusAsync(); }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task FetchGitAsync()
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        try { await gitService.FetchAsync(); await RefreshGitStatusAsync(); status.Text = "Git : fetch terminé."; }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git — fetch", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task StashGitAsync()
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        var message = Microsoft.VisualBasic.Interaction.InputBox("Message facultatif du stash :", "Git — stash");
+        try { await gitService.StashPushAsync(message); await RefreshGitStatusAsync(); }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git — stash", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task StashPopGitAsync()
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        try { await gitService.StashPopAsync(); await RefreshGitStatusAsync(); }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git — restaurer le stash", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task MergeGitAsync()
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        var branch = Microsoft.VisualBasic.Interaction.InputBox("Nom de la branche à fusionner :", "Git — merge");
+        if (string.IsNullOrWhiteSpace(branch)) return;
+        try { await gitService.MergeAsync(branch); await RefreshGitStatusAsync(); }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git — merge", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private async Task RebaseGitAsync()
+    {
+        if (gitService is null) { status.Text = "Aucun dépôt Git ouvert."; return; }
+        var branch = Microsoft.VisualBasic.Interaction.InputBox("Nom de la branche de base :", "Git — rebase");
+        if (string.IsNullOrWhiteSpace(branch)) return;
+        try { await gitService.RebaseAsync(branch); await RefreshGitStatusAsync(); }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Git — rebase", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 
     private async Task ListGitBranchesAsync()
@@ -445,13 +730,95 @@ public sealed class Form1 : Form
             ("IA : Ouvrir l’assistant", () => SelectBottomTab("Assistant IA")),
             ("Extensions : Actualiser", RefreshExtensions)
         };
-        commands.AddRange(extensionService.Commands.Select(command => ($"Extension : {command.Label}", command.Action)));
+        if (settings.ExamMode)
+            commands.RemoveAll(command => command.Label.StartsWith("IA :", StringComparison.Ordinal) || command.Label.StartsWith("Extensions :", StringComparison.Ordinal));
+        else
+            commands.AddRange(extensionService.Commands.Select(command => ($"Extension : {command.Label}", command.Action)));
         using var palette = new CommandPaletteForm(commands);
         palette.ShowDialog(this);
     }
     private CodeEditorSurface? Editor() => EditorOf(tabs.SelectedTab);
     private static CodeEditorSurface? EditorOf(TabPage? page) => page?.Controls.OfType<CodeEditorSurface>().FirstOrDefault();
     private string? PathOf(TabPage? page = null) => (page ?? tabs.SelectedTab)?.Tag as string;
+
+    private void ConfigureTabInteractions()
+    {
+        tabs.DrawItem += DrawEditorTab;
+        tabs.MouseDown += EditorTabs_MouseDown;
+
+        tabContextMenu = new ContextMenuStrip
+        {
+            Renderer = new ToolStripProfessionalRenderer(new DarkColors())
+        };
+        AddTabContextCommand("Fermer", CloseContextTab);
+        AddTabContextCommand("Fermer les autres", () => CloseOtherTabs(contextTabIndex));
+        AddTabContextCommand("Fermer à droite", () => CloseTabsToRight(contextTabIndex));
+        tabContextMenu.Items.Add(new ToolStripSeparator());
+        AddTabContextCommand("Fermer tous les onglets", CloseAll);
+        tabs.ContextMenuStrip = tabContextMenu;
+    }
+
+    private void AddTabContextCommand(string text, Action action)
+    {
+        var item = new ToolStripMenuItem(text);
+        item.Click += (_, _) => action();
+        tabContextMenu!.Items.Add(item);
+    }
+
+    private void EditorTabs_MouseDown(object? sender, MouseEventArgs e)
+    {
+        var index = TabIndexAt(e.Location);
+        if (index < 0) return;
+
+        if (e.Button == MouseButtons.Right)
+        {
+            tabs.SelectedIndex = index;
+            contextTabIndex = index;
+            tabContextMenu?.Show(tabs, e.Location);
+            return;
+        }
+
+        if (e.Button == MouseButtons.Middle || (e.Button == MouseButtons.Left && CloseGlyphRect(index).Contains(e.Location)))
+        {
+            ClosePageAt(index);
+            return;
+        }
+
+        if (e.Button == MouseButtons.Left)
+            tabs.SelectedIndex = index;
+    }
+
+    private int TabIndexAt(Point location)
+    {
+        for (var index = 0; index < tabs.TabCount; index++)
+            if (tabs.GetTabRect(index).Contains(location)) return index;
+        return -1;
+    }
+
+    private Rectangle CloseGlyphRect(int index)
+    {
+        var tab = tabs.GetTabRect(index);
+        return new Rectangle(tab.Right - 23, tab.Top + 5, 18, Math.Max(16, tab.Height - 10));
+    }
+
+    private void DrawEditorTab(object? sender, DrawItemEventArgs e)
+    {
+        if (e.Index < 0 || e.Index >= tabs.TabPages.Count) return;
+        var page = tabs.TabPages[e.Index];
+        var selected = e.Index == tabs.SelectedIndex;
+        var background = selected ? Color.FromArgb(45, 49, 58) : Color.FromArgb(30, 33, 40);
+        using var backgroundBrush = new SolidBrush(background);
+        e.Graphics.FillRectangle(backgroundBrush, e.Bounds);
+        using var borderPen = new Pen(selected ? Color.FromArgb(0, 160, 220) : Color.FromArgb(60, 64, 72));
+        e.Graphics.DrawRectangle(borderPen, e.Bounds.X, e.Bounds.Y, e.Bounds.Width - 1, e.Bounds.Height - 1);
+
+        var textBounds = new Rectangle(e.Bounds.X + 10, e.Bounds.Y, Math.Max(0, e.Bounds.Width - 34), e.Bounds.Height);
+        TextRenderer.DrawText(e.Graphics, page.Text, Font, textBounds, Color.Gainsboro,
+            TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        var close = CloseGlyphRect(e.Index);
+        TextRenderer.DrawText(e.Graphics, "×", Font, close, Color.Silver,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+    }
 
     private void NewFile()
     {
@@ -639,6 +1006,7 @@ public sealed class Form1 : Form
 
     private void ApplyPedagogicalMode()
     {
+        outputViewModel.LearningMode = settings.LearningMode;
         foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
             surface.SetExamMode(settings.ExamMode);
         if (aiChatView is not null)
@@ -648,6 +1016,17 @@ public sealed class Form1 : Form
         }
         if (aiMenu is not null)
             foreach (ToolStripItem item in aiMenu.DropDownItems) item.Enabled = !settings.ExamMode;
+        if (extensionsMenu is not null)
+            extensionsMenu.Enabled = !settings.ExamMode;
+        var terminalPage = bottomTabs?.TabPages.Cast<TabPage>()
+            .FirstOrDefault(page => string.Equals(page.Text, "Terminal", StringComparison.Ordinal));
+        if (terminalPage is not null)
+        {
+            if (settings.ExamMode) terminalViewModel.Stop();
+            terminalPage.Enabled = !settings.ExamMode;
+            if (settings.ExamMode && bottomTabs?.SelectedTab == terminalPage)
+                SelectBottomTab("Sortie");
+        }
     }
 
     private static void ApplyWinFormsColors(Control parent, Color surface, Color text)
@@ -710,16 +1089,49 @@ public sealed class Form1 : Form
 
     private void ShowAbout()
     {
-        MessageBox.Show(this,
-            "KEYCE CODE\nÉditeur C# pour Windows\n\nÉdition, coloration syntaxique, compilation et terminal intégrés.",
-            "À propos de KEYCE CODE",
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Information);
+        using var dialog = new Form
+        {
+            Text = "À propos de KEYCE CODE",
+            StartPosition = FormStartPosition.CenterParent,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            ClientSize = new Size(440, 280),
+            BackColor = Color.FromArgb(30, 33, 40),
+            ForeColor = Color.Gainsboro
+        };
+        var picture = new PictureBox { Dock = DockStyle.Top, Height = 170, SizeMode = PictureBoxSizeMode.Zoom, Image = LoadOfficialLogoLarge() };
+        var text = new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = "KEYCE CODE\nÉditeur de code Windows\n\nÉdition, analyse, compilation, terminal et outils de développement intégrés.",
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Segoe UI", 10F),
+            ForeColor = Color.Gainsboro,
+            Padding = new Padding(12)
+        };
+        dialog.Controls.Add(text);
+        dialog.Controls.Add(picture);
+        dialog.ShowDialog(this);
+        picture.Image?.Dispose();
     }
 
     private void ConfigureOllama()
     {
         OpenSettingsDialog();
+    }
+
+    private void ConfigureAi()
+    {
+        using var dialog = new AiSettingsDialog(settings, secretStore);
+        dialog.ApplyTheme(!string.Equals(settings.Theme, "Light", StringComparison.OrdinalIgnoreCase));
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        dialog.SaveSecrets();
+        var models = dialog.GetModels(); settings.GeminiModel = models.GeminiModel; settings.GroqModel = models.GroqModel;
+        settingsService.Save(settings); aiRouter = AiProviderFactory.Create(settings, secretStore);
+        aiChatViewModel = new AiChatViewModel(settings, router: aiRouter);
+        if (aiChatView is not null) aiChatView.DataContext = aiChatViewModel;
+        status.Text = aiRouter.ProviderNames.Count == 0 ? "IA : aucun relais configuré." : "Configuration IA enregistrée.";
     }
 
     private void OpenSettingsDialog()
@@ -794,8 +1206,9 @@ public sealed class Form1 : Form
         if (string.IsNullOrWhiteSpace(path)) { status.Text = "Ouvrez un projet avant de déboguer."; return; }
         try
         {
+            debuggerService.PreferredAdapterPath = settings.DebuggerPath;
             SaveAllOpenFiles();
-            var project = Directory.Exists(path) ? Directory.EnumerateFiles(path, "*.csproj", SearchOption.AllDirectories).FirstOrDefault() : path;
+            var project = outputViewModel.ResolveRunnableProject(path);
             if (string.IsNullOrWhiteSpace(project)) throw new FileNotFoundException("Aucun projet .csproj trouvé.");
             var directory = Path.GetDirectoryName(project)!;
             var projectName = Path.GetFileNameWithoutExtension(project);
@@ -912,7 +1325,7 @@ public sealed class Form1 : Form
     {
         var editor = EditorOf(page);
         page.Text = (PathOf(page) is { } p ? Path.GetFileName(p) : "Sans titre") + (editor?.Modified == true ? " •" : "");
-        Text = $"{page.Text} — KeyceCode";
+        Text = $"{page.Text} — KEYCE CODE";
         if (editor is not null) { editor.TextChanged -= OnEditorChanged; editor.TextChanged += OnEditorChanged; }
     }
     private void OnEditorChanged(object? sender, EventArgs e)
@@ -922,6 +1335,7 @@ public sealed class Form1 : Form
         UpdateTitle(page);
         if (ReferenceEquals(page, tabs.SelectedTab) && aiChatViewModel is not null)
             aiChatViewModel.ContextText = editor.Text;
+        editor.SetDiagnostics([]);
         ScheduleLiveAnalysis(editor);
     }
 
@@ -939,15 +1353,21 @@ public sealed class Form1 : Form
     {
         try
         {
-            await Task.Delay(650, cancellationToken);
-            var diagnostics = await Task.Run(() => codeAnalysisService.Analyze(editor.Text), cancellationToken);
-            if (cancellationToken.IsCancellationRequested || !ReferenceEquals(editor, Editor())) return;
+            var diagnostics = await liveDiagnosticsCoordinator.AnalyzeAsync(
+                editor.Text,
+                source => codeAnalysisService.Analyze(source),
+                TimeSpan.FromMilliseconds(650),
+                cancellationToken);
+            if (diagnostics is null || cancellationToken.IsCancellationRequested || !ReferenceEquals(editor, Editor())) return;
             BeginInvoke(() =>
             {
                 if (!cancellationToken.IsCancellationRequested && ReferenceEquals(editor, Editor()))
+                {
+                    editor.SetDiagnostics(diagnostics);
                     status.Text = diagnostics.Count == 0
                         ? "Analyse en direct : aucune erreur détectée."
                         : $"Analyse en direct : {diagnostics.Count} problème(s). Utilisez Analyser pour le détail.";
+                }
             });
         }
         catch (OperationCanceledException) { }
@@ -997,16 +1417,66 @@ public sealed class Form1 : Form
         }
         return true;
     }
-    private void CloseCurrent()
-    { if (tabs.SelectedTab is not { } page || !CanClose(page)) return; tabs.TabPages.Remove(page); page.Dispose(); if (tabs.TabCount == 0) NewFile(); }
+    private void CloseContextTab() => ClosePageAt(contextTabIndex);
+
+    private void ClosePageAt(int index)
+    {
+        if (index < 0 || index >= tabs.TabPages.Count) return;
+        var page = tabs.TabPages[index];
+        if (!CanClose(page)) return;
+        tabs.TabPages.Remove(page);
+        page.Dispose();
+        if (tabs.TabCount == 0) NewFile();
+        else
+        {
+            tabs.SelectedIndex = Math.Min(index, tabs.TabCount - 1);
+            if (tabs.SelectedTab is { } active) UpdateTitle(active);
+        }
+    }
+
+    private void CloseCurrent() => ClosePageAt(tabs.SelectedIndex);
+
+    private void CloseOtherTabs(int keepIndex)
+    {
+        if (keepIndex < 0 || keepIndex >= tabs.TabPages.Count) return;
+        var pages = tabs.TabPages.Cast<TabPage>().Where((_, index) => index != keepIndex).ToList();
+        if (!CanClosePages(pages)) return;
+        foreach (var page in pages)
+        {
+            tabs.TabPages.Remove(page);
+            page.Dispose();
+        }
+        tabs.SelectedIndex = Math.Min(keepIndex, tabs.TabCount - 1);
+        if (tabs.SelectedTab is { } active) UpdateTitle(active);
+    }
+
+    private void CloseTabsToRight(int startIndex)
+    {
+        if (startIndex < 0 || startIndex >= tabs.TabPages.Count) return;
+        var pages = tabs.TabPages.Cast<TabPage>().Skip(startIndex + 1).ToList();
+        if (!CanClosePages(pages)) return;
+        foreach (var page in pages)
+        {
+            tabs.TabPages.Remove(page);
+            page.Dispose();
+        }
+        tabs.SelectedIndex = Math.Min(startIndex, tabs.TabCount - 1);
+        if (tabs.SelectedTab is { } active) UpdateTitle(active);
+    }
+
+    private bool CanClosePages(IReadOnlyList<TabPage> pages)
+    {
+        foreach (var page in pages)
+            if (!CanClose(page)) return false;
+        return true;
+    }
 
     private void CloseAll()
     {
         var pages = tabs.TabPages.Cast<TabPage>().ToList();
         // Confirmer tous les fichiers avant de retirer le moindre onglet :
         // une annulation ne doit pas produire une fermeture partielle.
-        foreach (var page in pages)
-            if (!CanClose(page)) return;
+        if (!CanClosePages(pages)) return;
 
         foreach (var page in pages)
         {
@@ -1191,10 +1661,47 @@ public sealed class Form1 : Form
             var results = searchService.ReplaceAll(root, query, replacement);
             output.Clear();
             foreach (var result in results) output.AppendText($"{result.FilePath} : {result.Occurrences} occurrence(s) remplacée(s).\r\n");
+            SynchronizeOpenFilesAfterReplace(results);
             status.Text = $"Remplacement terminé : {results.Sum(result => result.Occurrences)} occurrence(s).";
             explorer.RefreshProject();
         }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "Erreur de remplacement", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private void SynchronizeOpenFilesAfterReplace(IReadOnlyList<ReplacementResult> results)
+    {
+        var changedPaths = results.Select(result => Path.GetFullPath(result.FilePath))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var modifiedFiles = new List<string>();
+        foreach (var page in tabs.TabPages.Cast<TabPage>())
+        {
+            if (PathOf(page) is not { } path || !changedPaths.Contains(Path.GetFullPath(path)) || EditorOf(page) is not { } editor)
+                continue;
+            if (editor.Modified)
+            {
+                modifiedFiles.Add(path);
+                continue;
+            }
+
+            try
+            {
+                editor.Text = fileService.ReadText(path);
+                editor.ApplyLanguage(Path.GetExtension(path));
+                editor.Modified = false;
+                UpdateTitle(page);
+            }
+            catch (Exception ex)
+            {
+                output.AppendText($"⚠ Impossible de recharger {path} : {ex.Message}\r\n");
+            }
+        }
+
+        if (modifiedFiles.Count > 0)
+        {
+            output.AppendText("⚠ Fichiers ouverts avec des modifications locales non rechargés :\r\n");
+            foreach (var path in modifiedFiles) output.AppendText($"  {path}\r\n");
+            output.AppendText("Enregistrez ou fermez ces onglets avec attention pour éviter d’écraser le remplacement.\r\n");
+        }
     }
 
     private void AnalyzeCurrent()
@@ -1205,6 +1712,7 @@ public sealed class Form1 : Form
         try
         {
             var diagnostics = codeAnalysisService.Analyze(editor.Text);
+            editor.SetDiagnostics(diagnostics);
             SelectBottomTab("Sortie");
             output.Clear();
             diagnosticRanges.Clear();
@@ -1221,6 +1729,8 @@ public sealed class Form1 : Form
             {
                 var start = output.TextLength;
                 output.AppendText($"{diagnostic.Severity} | {diagnostic.Code} | Ligne {diagnostic.Line}, Colonne {diagnostic.Column}\r\n{diagnostic.Message}\r\n\r\n");
+                if (settings.LearningMode)
+                    output.AppendText($"Piste : {learningHintService.GetHint(diagnostic.Code)}\r\n\r\n");
                 diagnosticRanges.Add((start, output.TextLength, diagnostic.Line, diagnostic.Column));
             }
 
@@ -1304,11 +1814,38 @@ public sealed class Form1 : Form
             return;
         }
 
+        if (previewService.CanPreview(ext))
+        {
+            try
+            {
+                var previewPath = previewService.CreatePreviewFile(file, editor.Text);
+                Process.Start(new ProcessStartInfo(previewPath) { UseShellExecute = true });
+                output.Text = $"Aperçu ouvert dans le navigateur : {previewPath}";
+                status.Text = "Aperçu ouvert.";
+            }
+            catch (Exception ex)
+            {
+                output.Text = $"Impossible d’ouvrir l’aperçu : {ex.Message}";
+                status.Text = "Échec de l’aperçu.";
+            }
+            return;
+        }
+
         var command = languageRunnerService.Resolve(file);
         var (exe, args) = command is null ? ("", "") : (command.Executable, command.Arguments);
         if (exe.Length == 0)
         {
             output.Text = $"Aucun exécuteur configuré pour {ext}.\r\nExtensions prises en charge : {string.Join(", ", languageRunnerService.SupportedExtensions.OrderBy(value => value))}.";
+            return;
+        }
+        var toolStatuses = languageRunnerService.CheckTools(command!);
+        var missingTools = toolStatuses.Where(tool => !tool.IsAvailable).ToArray();
+        if (missingTools.Length > 0)
+        {
+            output.Text = "Exécution impossible : outil(s) manquant(s)\r\n\r\n"
+                + string.Join(Environment.NewLine, missingTools.Select(tool => $"• {tool.Message}"))
+                + "\r\n\r\nInstallez l’outil puis redémarrez KEYCE CODE pour actualiser le PATH.";
+            status.Text = "Outil manquant.";
             return;
         }
         await RunScriptAsync(new LanguageCommand(command!.Language, exe, args), file);

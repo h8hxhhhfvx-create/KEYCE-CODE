@@ -13,7 +13,7 @@ public sealed class SettingsServiceTests
         try
         {
             var service = new SettingsService(path);
-            service.Save(new AppSettings { Theme = "Light", EditorFontSize = 16, WordWrap = true, TabSize = 2, LearningMode = true, OllamaModel = "test-model" });
+            service.Save(new AppSettings { Theme = "Light", EditorFontSize = 16, WordWrap = true, TabSize = 2, LearningMode = true, OllamaModel = "test-model", DebuggerPath = "tools\\vsdbg.exe" });
 
             var loaded = service.Load();
 
@@ -23,6 +23,7 @@ public sealed class SettingsServiceTests
             Assert.Equal(2, loaded.TabSize);
             Assert.True(loaded.LearningMode);
             Assert.Equal("test-model", loaded.OllamaModel);
+            Assert.Equal(Path.GetFullPath("tools\\vsdbg.exe"), loaded.DebuggerPath);
         }
         finally
         {
@@ -58,6 +59,8 @@ public sealed class SettingsServiceTests
             Assert.Equal(4, settings.TabSize);
             Assert.Equal("http://server", settings.OllamaEndpoint);
             Assert.Equal("model", settings.OllamaModel);
+            Assert.Equal("gemini-2.5-flash", settings.GeminiModel);
+            Assert.Equal("llama-3.1-8b-instant", settings.GroqModel);
             Assert.False(settings.LearningMode);
         }
         finally
@@ -104,6 +107,29 @@ public sealed class SettingsServiceTests
 
             Assert.Single(settings.RecentProjects);
             Assert.Equal(Path.GetFullPath("valid-project"), settings.RecentProjects[0]);
+        }
+        finally
+        {
+            var directory = Path.GetDirectoryName(path);
+            if (directory is not null && Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SaveThenLoad_PreservesSessionState()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "KeyceCodeSettings", Guid.NewGuid().ToString("N"), "settings.json");
+        try
+        {
+            var workspace = Path.Combine(Path.GetTempPath(), "keyce-workspace");
+            var file = Path.Combine(workspace, "Program.cs");
+            var service = new SettingsService(path);
+            service.Save(new AppSettings { LastWorkspace = workspace, OpenFiles = [file] });
+
+            var loaded = service.Load();
+
+            Assert.Equal(Path.GetFullPath(workspace), loaded.LastWorkspace);
+            Assert.Equal([Path.GetFullPath(file)], loaded.OpenFiles);
         }
         finally
         {

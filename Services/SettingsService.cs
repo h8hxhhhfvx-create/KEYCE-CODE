@@ -25,6 +25,7 @@ public sealed class SettingsService
         }
         catch (JsonException) { return new AppSettings(); }
         catch (IOException) { return new AppSettings(); }
+        catch (UnauthorizedAccessException) { return new AppSettings(); }
     }
 
     public void Save(AppSettings settings)
@@ -33,7 +34,16 @@ public sealed class SettingsService
             ?? throw new IOException("Le dossier des paramètres est introuvable.");
         Directory.CreateDirectory(directory);
         var json = JsonSerializer.Serialize(Normalize(settings), new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(settingsPath, json);
+        var temporaryPath = settingsPath + $".{Guid.NewGuid():N}.tmp";
+        try
+        {
+            File.WriteAllText(temporaryPath, json);
+            File.Move(temporaryPath, settingsPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+        }
     }
 
     private static AppSettings Normalize(AppSettings settings)
@@ -45,6 +55,11 @@ public sealed class SettingsService
             ? "http://localhost:11434"
             : settings.OllamaEndpoint.Trim().TrimEnd('/');
         settings.OllamaModel = string.IsNullOrWhiteSpace(settings.OllamaModel) ? "qwen2.5:7b" : settings.OllamaModel.Trim();
+        settings.GeminiModel = string.IsNullOrWhiteSpace(settings.GeminiModel) ? "gemini-2.5-flash" : settings.GeminiModel.Trim();
+        settings.GroqModel = string.IsNullOrWhiteSpace(settings.GroqModel) ? "llama-3.1-8b-instant" : settings.GroqModel.Trim();
+        settings.DebuggerPath = string.IsNullOrWhiteSpace(settings.DebuggerPath)
+            ? null
+            : TryGetFullPath(settings.DebuggerPath.Trim().Trim('"'));
         settings.RecentProjects = (settings.RecentProjects ?? [])
             .Where(path => !string.IsNullOrWhiteSpace(path))
             .Select(TryGetFullPath)
@@ -52,6 +67,15 @@ public sealed class SettingsService
             .Select(path => path!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(10)
+            .ToList();
+        settings.LastWorkspace = string.IsNullOrWhiteSpace(settings.LastWorkspace) ? null : TryGetFullPath(settings.LastWorkspace);
+        settings.OpenFiles = (settings.OpenFiles ?? [])
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(TryGetFullPath)
+            .Where(path => path is not null)
+            .Select(path => path!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(20)
             .ToList();
         if (settings.ExamMode) settings.LearningMode = false;
         return settings;
