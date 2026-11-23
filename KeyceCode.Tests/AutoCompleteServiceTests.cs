@@ -14,4 +14,13 @@ public sealed class AutoCompleteServiceTests
         Assert.Contains("continue", suggestions);
         Assert.Contains("Console", service.GetSuggestions("Con", 3));
     }
+
+    [Fact]
+    public void GetCompletionItems_ProvidesSnippetWithSeparateInsertText()
+    {
+        var item = Assert.Single(new AutoCompleteService().GetCompletionItems("cw", 2), item => item.Kind == "Snippet");
+
+        Assert.Equal("cw — Console.WriteLine", item.DisplayText);
+        Assert.Equal("Console.WriteLine();", item.InsertText);
+    }
 }

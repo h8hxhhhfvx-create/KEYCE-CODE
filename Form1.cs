@@ -25,6 +25,7 @@ public sealed class Form1 : Form
     private readonly FormatService formatService = new();
     private readonly CodeSymbolService codeSymbolService = new();
     private readonly CodeRenameService codeRenameService = new();
+    private readonly CodeReferenceService codeReferenceService = new();
     private readonly SearchService searchService = new();
     private readonly TextSearchService textSearchService = new();
     private readonly AiAgentService aiAgentService;
@@ -117,6 +118,7 @@ public sealed class Form1 : Form
         Add(editMenu, "Aller à la ligne…", (_, _) => GoToLine(), Keys.Control | Keys.G);
         Add(editMenu, "Aller au symbole…", (_, _) => GoToSymbol(), Keys.Control | Keys.Shift | Keys.O);
         Add(editMenu, "Renommer le symbole…", (_, _) => RenameSymbol(), Keys.F2);
+        Add(editMenu, "Trouver les références", (_, _) => FindReferences(), Keys.Shift | Keys.F12);
         Add(editMenu, "Aller à la définition", (_, _) => GoToDefinition(), Keys.F12);
         Add(editMenu, "Formater le document", (_, _) => FormatCurrent(), Keys.Control | Keys.Shift | Keys.I);
         Add(editMenu, "Rechercher dans les fichiers…", (_, _) => SearchInFiles(), Keys.Control | Keys.Shift | Keys.F);
@@ -724,6 +726,7 @@ public sealed class Form1 : Form
             ("Édition : Aller à la ligne", GoToLine),
             ("Édition : Aller au symbole", GoToSymbol),
             ("Édition : Renommer le symbole", RenameSymbol),
+            ("Édition : Trouver les références", FindReferences),
             ("Édition : Aller à la définition", GoToDefinition),
             ("Édition : Formater le document", FormatCurrent),
             ("Projet : Compiler", CompileProject),
@@ -1591,6 +1594,26 @@ public sealed class Form1 : Form
             status.Text = result.Occurrences == 0 ? "Le symbole porte déjà ce nom." : $"Symbole renommé : {result.Occurrences} occurrence(s).";
         }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "Renommer le symbole", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private void FindReferences()
+    {
+        var editor = Editor();
+        if (editor is null) return;
+        var references = codeReferenceService.FindReferences(editor.Text, editor.SelectionStart);
+        output.Clear();
+        if (references.Count == 0)
+        {
+            output.AppendText("Aucune référence C# trouvée.\r\n");
+            status.Text = "Aucune référence trouvée.";
+            return;
+        }
+
+        var name = references[0].Name;
+        output.AppendText($"Références de {name} ({references.Count}) :\r\n");
+        foreach (var reference in references)
+            output.AppendText($"{PathOf() ?? "fichier courant"}:{reference.Line}:{reference.Column}\r\n");
+        status.Text = $"{references.Count} référence(s) trouvée(s) pour {name}.";
     }
 
     private void GoToDefinition()
