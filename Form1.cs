@@ -74,6 +74,8 @@ public sealed class Form1 : Form
         BackColor = Color.FromArgb(37, 40, 48); ForeColor = Color.Gainsboro; StartPosition = FormStartPosition.CenterScreen;
         BuildLayout();
         RestoreSession();
+        if (settingsService.LastLoadWarning is { } warning)
+            status.Text = warning;
         output.MouseDoubleClick += Output_MouseDoubleClick;
         outputViewModel.DiagnosticActivated += OpenDiagnostic;
         debuggerService.OutputReceived += DebuggerOutputReceived;

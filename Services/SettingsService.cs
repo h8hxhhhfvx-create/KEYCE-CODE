@@ -7,6 +7,8 @@ public sealed class SettingsService
 {
     private readonly string settingsPath;
 
+    public string? LastLoadWarning { get; private set; }
+
     public SettingsService(string? settingsPath = null)
     {
         this.settingsPath = settingsPath ?? Path.Combine(
@@ -17,15 +19,31 @@ public sealed class SettingsService
 
     public AppSettings Load()
     {
+        LastLoadWarning = null;
         try
         {
             if (!File.Exists(settingsPath)) return new AppSettings();
             var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(settingsPath));
             return Normalize(settings ?? new AppSettings());
         }
-        catch (JsonException) { return new AppSettings(); }
-        catch (IOException) { return new AppSettings(); }
-        catch (UnauthorizedAccessException) { return new AppSettings(); }
+        catch (JsonException)
+        {
+            var backupPath = BackupCorruptSettings();
+            LastLoadWarning = backupPath is null
+                ? "Le fichier de session est corrompu. Les paramètres sûrs ont été rechargés."
+                : $"Le fichier de session était corrompu. Une copie a été conservée : {Path.GetFileName(backupPath)}.";
+            return new AppSettings();
+        }
+        catch (IOException)
+        {
+            LastLoadWarning = "Le fichier de session est inaccessible. Les paramètres sûrs ont été rechargés.";
+            return new AppSettings();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            LastLoadWarning = "Le fichier de session n'est pas accessible. Les paramètres sûrs ont été rechargés.";
+            return new AppSettings();
+        }
     }
 
     public void Save(AppSettings settings)
@@ -86,5 +104,18 @@ public sealed class SettingsService
     {
         try { return Path.GetFullPath(path); }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { return null; }
+    }
+
+    private string? BackupCorruptSettings()
+    {
+        try
+        {
+            if (!File.Exists(settingsPath)) return null;
+            var backupPath = settingsPath + $".corrupt-{DateTime.UtcNow:yyyyMMddHHmmssfff}.json";
+            File.Copy(settingsPath, backupPath, overwrite: false);
+            return backupPath;
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
     }
 }

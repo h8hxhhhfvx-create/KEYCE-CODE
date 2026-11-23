@@ -118,6 +118,32 @@ public sealed class SettingsServiceTests
     }
 
     [Fact]
+    public void LoadCorruptSettings_RestoresSafeDefaultsAndPreservesCorruptCopy()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "KeyceCodeSettings", Guid.NewGuid().ToString("N"), "settings.json");
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "{ invalid session json");
+
+            var service = new SettingsService(path);
+            var settings = service.Load();
+
+            Assert.Equal("Dark", settings.Theme);
+            Assert.NotNull(service.LastLoadWarning);
+            Assert.Contains("corrompu", service.LastLoadWarning!, StringComparison.OrdinalIgnoreCase);
+            var backups = Directory.EnumerateFiles(Path.GetDirectoryName(path)!, "settings.json.corrupt-*.json").ToArray();
+            Assert.Single(backups);
+            Assert.Equal("{ invalid session json", File.ReadAllText(backups[0]));
+        }
+        finally
+        {
+            var directory = Path.GetDirectoryName(path);
+            if (directory is not null && Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void SaveThenLoad_PreservesSessionState()
     {
         var path = Path.Combine(Path.GetTempPath(), "KeyceCodeSettings", Guid.NewGuid().ToString("N"), "settings.json");
