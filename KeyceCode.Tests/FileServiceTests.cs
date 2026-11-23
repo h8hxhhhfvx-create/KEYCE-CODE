@@ -35,6 +35,65 @@ public sealed class FileServiceTests : IDisposable
     }
 
     [Fact]
+    public void ReadText_RejectsBinaryContent()
+    {
+        var path = Path.Combine(root, "image.bin");
+        File.WriteAllBytes(path, [0x42, 0x4D, 0x00, 0x01, 0x02]);
+
+        var exception = Assert.Throws<IOException>(() => service.ReadText(path));
+
+        Assert.Contains("binaire", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ReadText_RejectsFilesOverTheEditorLimit()
+    {
+        var path = Path.Combine(root, "large.txt");
+        using (var stream = File.Create(path)) stream.SetLength(FileService.MaximumTextFileBytes + 1);
+
+        var exception = Assert.Throws<IOException>(() => service.ReadText(path));
+
+        Assert.Contains("volumineux", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ReadText_UsesUtf8Bom()
+    {
+        var path = Path.Combine(root, "utf8.txt");
+        File.WriteAllText(path, "été", new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+
+        Assert.Equal("été", service.ReadText(path));
+    }
+
+    [Fact]
+    public void ReadText_ReportsInvalidUtf8WithoutBom()
+    {
+        var path = Path.Combine(root, "invalid.txt");
+        File.WriteAllBytes(path, [0xC3, 0x28]);
+
+        var exception = Assert.Throws<IOException>(() => service.ReadText(path));
+
+        Assert.Contains("UTF-8", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void IsReadOnly_DetectsReadOnlyAttribute()
+    {
+        var path = Path.Combine(root, "locked.cs");
+        File.WriteAllText(path, "class Locked { }");
+        File.SetAttributes(path, FileAttributes.ReadOnly);
+
+        try
+        {
+            Assert.True(service.IsReadOnly(path));
+        }
+        finally
+        {
+            File.SetAttributes(path, FileAttributes.Normal);
+        }
+    }
+
+    [Fact]
     public void CreateFile_ReturnsAnAbsolutePathToAnEmptyFile()
     {
         var file = service.CreateFile(root, "Program.cs");

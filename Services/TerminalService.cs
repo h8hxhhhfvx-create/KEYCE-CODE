@@ -5,12 +5,12 @@ using KeyceCode.Models;
 namespace KeyceCode.Services;
 
 /// <summary>
-/// Terminal intégré : exécute chaque commande via cmd.exe dans le dossier courant.
+/// Terminal intégré : exécute les commandes dans une session cmd ou PowerShell persistante.
 /// Les commandes cd / cls et le changement de lecteur (D:) sont gérés ici,
 /// car ils doivent modifier l'état du terminal et pas seulement d'un processus.
 /// Pendant qu'une commande tourne, SendInput() écrit dans son entrée standard.
 /// </summary>
-public sealed class TerminalService
+public sealed class TerminalService : IDisposable
 {
     private static readonly Regex CdRegex =
         new(@"^(?:cd|chdir)(?:\s+/d)?(?:\s+|(?=[.\\/])|$)(?<arg>.*)$", RegexOptions.IgnoreCase);
@@ -18,7 +18,8 @@ public sealed class TerminalService
     private static readonly Regex DriveRegex = new(@"^[A-Za-z]:$");
 
     private volatile bool _busy;
-    private ProcessSession? _current;
+    private InteractiveShellSession? _current;
+    private string _shellProfile = "cmd";
 
     public TerminalService(string? initialDirectory = null)
     {
@@ -29,17 +30,36 @@ public sealed class TerminalService
 
     public string WorkingDirectory { get; private set; }
 
+    public IReadOnlyList<string> ShellProfiles { get; } = ["cmd", "PowerShell"];
+
+    public string ShellProfile
+    {
+        get => _shellProfile;
+        private set => _shellProfile = value;
+    }
+
     public bool IsRunning => _busy;
 
     public event Action<string, OutputKind>? OutputReceived;
     public event Action? DirectoryChanged;
     public event Action? ClearRequested;
 
+    public void SetShellProfile(string profile)
+    {
+        var normalized = profile.Equals("PowerShell", StringComparison.OrdinalIgnoreCase) ? "PowerShell" : "cmd";
+        if (string.Equals(ShellProfile, normalized, StringComparison.OrdinalIgnoreCase)) return;
+        _current?.Dispose();
+        _current = null;
+        ShellProfile = normalized;
+        DirectoryChanged?.Invoke();
+    }
+
     /// <summary>Change le dossier courant (ex. quand l'utilisateur ouvre un projet).</summary>
     public void SetWorkingDirectory(string path)
     {
         if (!Directory.Exists(path)) return;
         WorkingDirectory = Path.GetFullPath(path);
+        ApplyDirectoryToShell(WorkingDirectory);
         DirectoryChanged?.Invoke();
     }
 
@@ -56,13 +76,15 @@ public sealed class TerminalService
             return builtInCode;
 
         _busy = true;
-        using var session = new ProcessSession("cmd.exe", $"/d /s /c \"{commandLine}\"", WorkingDirectory);
-        session.OutputReceived += (text, kind) => OutputReceived?.Invoke(text, kind);
-        _current = session;
+        var session = EnsureShell();
 
         try
         {
-            return await session.RunAsync();
+            return await session.ExecuteAsync(commandLine);
+        }
+        catch (OperationCanceledException)
+        {
+            return -1;
         }
         catch (Win32Exception ex)
         {
@@ -71,7 +93,6 @@ public sealed class TerminalService
         }
         finally
         {
-            _current = null;
             _busy = false;
         }
     }
@@ -81,6 +102,27 @@ public sealed class TerminalService
 
     /// <summary>Arrête la commande en cours (équivalent de Ctrl+C).</summary>
     public void Stop() => _current?.Kill();
+
+    public void Dispose()
+    {
+        _current?.Dispose();
+        _current = null;
+    }
+
+    private InteractiveShellSession EnsureShell()
+    {
+        if (_current is { IsRunning: true }) return _current;
+        _current?.Dispose();
+        var powerShell = string.Equals(ShellProfile, "PowerShell", StringComparison.OrdinalIgnoreCase);
+        var executable = powerShell
+            ? "pwsh.exe"
+            : (Environment.GetEnvironmentVariable("ComSpec") ?? Path.Combine(Environment.SystemDirectory, "cmd.exe"));
+        var arguments = powerShell ? "-NoLogo -NoProfile" : "/d /q /v:on";
+        var session = new InteractiveShellSession(executable, arguments, WorkingDirectory, powerShell);
+        session.OutputReceived += (text, kind) => OutputReceived?.Invoke(text, kind);
+        _current = session;
+        return session;
+    }
 
     // ------------------------------------------------------------------
 
@@ -126,6 +168,7 @@ public sealed class TerminalService
             if (Directory.Exists(target))
             {
                 WorkingDirectory = target;
+                ApplyDirectoryToShell(target);
                 DirectoryChanged?.Invoke();
             }
             else
@@ -141,5 +184,20 @@ public sealed class TerminalService
         }
 
         return true;
+    }
+
+    private void ApplyDirectoryToShell(string path)
+    {
+        if (_current is not { IsRunning: true }) return;
+
+        if (string.Equals(ShellProfile, "PowerShell", StringComparison.OrdinalIgnoreCase))
+        {
+            var escaped = path.Replace("'", "''", StringComparison.Ordinal);
+            _current.Write($"Set-Location -LiteralPath '{escaped}'{Environment.NewLine}");
+        }
+        else
+        {
+            _current.Write($"cd /d \"{path}\"{Environment.NewLine}");
+        }
     }
 }

@@ -33,4 +33,13 @@ public sealed class CodeAnalysisServiceTests
         Assert.Contains(diagnostics, diagnostic =>
             diagnostic.Code == "CS0103" && diagnostic.Message.Contains("Missing", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void LearningHints_ExplainKnownAndUnknownDiagnostics()
+    {
+        var service = new LearningHintService();
+
+        Assert.Contains("point-virgule", service.GetHint("CS1002"), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("message", service.GetHint("CS9999"), StringComparison.OrdinalIgnoreCase);
+    }
 }

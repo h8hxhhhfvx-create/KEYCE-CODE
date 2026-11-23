@@ -23,6 +23,7 @@ public sealed class Form1 : Form
     private readonly CodeAnalysisService codeAnalysisService = new();
     private readonly LearningHintService learningHintService = new();
     private readonly FormatService formatService = new();
+    private readonly DocumentPersistenceService documentPersistenceService;
     private readonly CodeSymbolService codeSymbolService = new();
     private readonly CodeRenameService codeRenameService = new();
     private readonly CodeReferenceService codeReferenceService = new();
@@ -66,6 +67,7 @@ public sealed class Form1 : Form
 
     public Form1()
     {
+        documentPersistenceService = new DocumentPersistenceService(fileService, formatService);
         settings = settingsService.Load();
         aiRouter = AiProviderFactory.Create(settings, secretStore);
         aiAgentService = new AiAgentService(router: aiRouter);
@@ -113,6 +115,7 @@ public sealed class Form1 : Form
         Add(editMenu, "Couper", (_, _) => Editor()?.Cut(), Keys.Control | Keys.X);
         Add(editMenu, "Copier", (_, _) => Editor()?.Copy(), Keys.Control | Keys.C);
         Add(editMenu, "Coller", (_, _) => Editor()?.Paste(), Keys.Control | Keys.V);
+        Add(editMenu, "Commenter/décommenter la sélection", (_, _) => Editor()?.ToggleLineComment(), Keys.Control | Keys.OemQuestion);
         Add(editMenu, "Rechercher…", (_, _) => FindText(), Keys.Control | Keys.F);
         Add(editMenu, "Remplacer…", (_, _) => ReplaceText(), Keys.Control | Keys.H);
         Add(editMenu, "Aller à la ligne…", (_, _) => GoToLine(), Keys.Control | Keys.G);
@@ -715,7 +718,7 @@ public sealed class Form1 : Form
             ("Fichier : Nouveau", NewFile),
             ("Fichier : Ouvrir", OpenFile),
             ("Fichier : Enregistrer", SaveCurrent),
-            ("Fichier : Enregistrer tout", SaveAllOpenFiles),
+            ("Fichier : Enregistrer tout", () => _ = SaveAllOpenFiles()),
             ("Fichier : Enregistrer sous", SaveAs),
             ("Fichier : Fermer l’onglet", CloseCurrent),
             ("Fichier : Fermer tous les onglets", CloseAll),
@@ -747,8 +750,8 @@ public sealed class Form1 : Form
         using var palette = new CommandPaletteForm(commands);
         palette.ShowDialog(this);
     }
-    private CodeEditorSurface? Editor() => EditorOf(tabs.SelectedTab);
-    private static CodeEditorSurface? EditorOf(TabPage? page) => page?.Controls.OfType<CodeEditorSurface>().FirstOrDefault();
+    private ICodeEditorSurface? Editor() => EditorOf(tabs.SelectedTab);
+    private static ICodeEditorSurface? EditorOf(TabPage? page) => page?.Controls.OfType<ICodeEditorSurface>().FirstOrDefault();
     private string? PathOf(TabPage? page = null) => (page ?? tabs.SelectedTab)?.Tag as string;
 
     private void ConfigureTabInteractions()
@@ -848,8 +851,8 @@ public sealed class Form1 : Form
         try
         {
             var page = new TabPage(Path.GetFileName(path)) { Tag = path, BackColor = Color.FromArgb(30, 33, 40) };
-            var surface = new CodeEditorSurface(); page.Controls.Add(surface); AttachEditor(surface); ApplyEditorSettings(surface); surface.ApplyLanguage(Path.GetExtension(path)); surface.Text = fileService.ReadText(path); surface.Modified = false;
-            tabs.TabPages.Add(page); tabs.SelectedTab = page; UpdateTitle(page); SetProjectContext(workspace ?? path); status.Text = path;
+            var surface = new CodeEditorSurface(); page.Controls.Add(surface); AttachEditor(surface); ApplyEditorSettings(surface); surface.ApplyLanguage(Path.GetExtension(path)); surface.Text = fileService.ReadText(path); surface.IsReadOnly = fileService.IsReadOnly(path); surface.Modified = false;
+            tabs.TabPages.Add(page); tabs.SelectedTab = page; UpdateTitle(page); SetProjectContext(workspace ?? path); status.Text = surface.IsReadOnly ? $"Lecture seule : {path}" : path;
         }
         catch (Exception ex) { MessageBox.Show(this, $"Impossible d’ouvrir le fichier.\n{ex.Message}", "KeyceCode", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
@@ -927,18 +930,18 @@ public sealed class Form1 : Form
 
     private void SaveCurrent() { if (tabs.SelectedTab is { } page) SavePage(page); }
 
-    private void ApplyEditorSettings(CodeEditorSurface surface)
+    private void ApplyEditorSettings(ICodeEditorSurface surface)
     {
         surface.ApplyAppearance(settings);
         surface.SetExamMode(settings.ExamMode);
     }
 
-    private void AttachEditor(CodeEditorSurface surface)
+    private void AttachEditor(ICodeEditorSurface surface)
     {
         surface.CaretPositionChanged += (_, _) => UpdateCursorStatus(surface);
     }
 
-    private void UpdateCursorStatus(CodeEditorSurface? surface)
+    private void UpdateCursorStatus(ICodeEditorSurface? surface)
     {
         if (surface is null) return;
         var (line, column) = surface.CaretPosition;
@@ -950,7 +953,7 @@ public sealed class Form1 : Form
         settings.Theme = theme;
         settingsService.Save(settings);
         ApplyChromeTheme();
-        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
+        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<ICodeEditorSurface>()))
             ApplyEditorSettings(surface);
         status.Text = $"Thème {theme switch { "Dark" => "sombre", _ => "clair" }} activé.";
     }
@@ -1017,7 +1020,7 @@ public sealed class Form1 : Form
     private void ApplyPedagogicalMode()
     {
         outputViewModel.LearningMode = settings.LearningMode;
-        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
+        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<ICodeEditorSurface>()))
             surface.SetExamMode(settings.ExamMode);
         if (aiChatView is not null)
         {
@@ -1065,7 +1068,7 @@ public sealed class Form1 : Form
     {
         settings.EditorFontSize = Math.Clamp(settings.EditorFontSize + amount, 8, 32);
         settingsService.Save(settings);
-        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
+        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<ICodeEditorSurface>()))
             ApplyEditorSettings(surface);
         status.Text = $"Taille du texte : {settings.EditorFontSize:0} pt";
     }
@@ -1074,7 +1077,7 @@ public sealed class Form1 : Form
     {
         settings.WordWrap = !settings.WordWrap;
         settingsService.Save(settings);
-        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
+        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<ICodeEditorSurface>()))
             ApplyEditorSettings(surface);
         status.Text = settings.WordWrap ? "Retour à la ligne activé." : "Retour à la ligne désactivé.";
     }
@@ -1083,7 +1086,7 @@ public sealed class Form1 : Form
     {
         settings.TabSize = size;
         settingsService.Save(settings);
-        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
+        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<ICodeEditorSurface>()))
             ApplyEditorSettings(surface);
         status.Text = $"Tabulations : {size} espaces.";
     }
@@ -1154,16 +1157,17 @@ public sealed class Form1 : Form
         ConfigureAutoSaveTimer();
         RefreshRecentProjectsMenu();
         ApplyChromeTheme();
-        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
+        foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<ICodeEditorSurface>()))
             ApplyEditorSettings(surface);
         ApplyPedagogicalMode();
         status.Text = "Paramètres enregistrés.";
     }
 
-    private void SaveAllOpenFiles()
+    private bool SaveAllOpenFiles()
     {
         foreach (var page in tabs.TabPages.Cast<TabPage>().ToList())
-            if (EditorOf(page)?.Modified == true) SavePage(page);
+            if (EditorOf(page)?.Modified == true && !SavePage(page)) return false;
+        return true;
     }
 
     private void ConfigureAutoSaveTimer()
@@ -1182,7 +1186,7 @@ public sealed class Form1 : Form
             if (editor?.Modified != true || path is null || !File.Exists(path)) continue;
             try
             {
-                fileService.WriteText(path, editor.Text);
+                documentPersistenceService.Save(path, editor.Text, formatCSharp: false, settings.TabSize);
                 editor.Modified = false;
                 UpdateTitle(page);
                 status.Text = $"Auto-save : {Path.GetFileName(path)}";
@@ -1344,33 +1348,30 @@ public sealed class Form1 : Form
         using var dialog = new SaveFileDialog { FileName = PathOf(page) is { } p ? Path.GetFileName(p) : "Sans titre.cs", Filter = "Tous les fichiers (*.*)|*.*" };
         if (dialog.ShowDialog(this) == DialogResult.OK) SavePage(page, dialog.FileName);
     }
-    private void SavePage(TabPage page, string? requestedPath = null)
+    private bool SavePage(TabPage page, string? requestedPath = null)
     {
-        if (EditorOf(page) is not { } editor) return;
+        if (EditorOf(page) is not { } editor) return false;
         var path = requestedPath ?? PathOf(page);
         if (path is null)
         {
             using var dialog = new SaveFileDialog { FileName = "NouveauFichier.cs", Filter = "Tous les fichiers (*.*)|*.*" };
-            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            if (dialog.ShowDialog(this) != DialogResult.OK) return false;
             path = dialog.FileName;
         }
         try
         {
-            if (settings.FormatOnSave && string.Equals(Path.GetExtension(path), ".cs", StringComparison.OrdinalIgnoreCase))
-            {
-                var formatted = formatService.FormatCSharp(editor.Text, settings.TabSize);
-                if (!string.Equals(formatted, editor.Text, StringComparison.Ordinal)) editor.ReplaceText(formatted);
-            }
-            fileService.WriteText(path, editor.Text);
+            var result = documentPersistenceService.Save(path, editor.Text, settings.FormatOnSave, settings.TabSize);
+            if (!string.Equals(result.Content, editor.Text, StringComparison.Ordinal)) editor.ReplaceText(result.Content);
             page.Tag = Path.GetFullPath(path);
             editor.Modified = false;
             UpdateTitle(page);
-            status.Text = settings.FormatOnSave && string.Equals(Path.GetExtension(path), ".cs", StringComparison.OrdinalIgnoreCase)
+            status.Text = result.WasFormatted
                 ? $"Formaté et enregistré : {path}"
                 : $"Enregistré : {path}";
             if (workspace is not null) explorer.RefreshProject();
+            return true;
         }
-        catch (Exception ex) { MessageBox.Show(this, $"Impossible d’enregistrer.\n{ex.Message}", "KeyceCode", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        catch (Exception ex) { MessageBox.Show(this, $"Impossible d’enregistrer.\n{ex.Message}", "KeyceCode", MessageBoxButtons.OK, MessageBoxIcon.Error); return false; }
     }
     private void UpdateTitle(TabPage page)
     {
@@ -1381,7 +1382,7 @@ public sealed class Form1 : Form
     }
     private void OnEditorChanged(object? sender, EventArgs e)
     {
-        if (sender is not CodeEditorSurface editor) return;
+        if (sender is not ICodeEditorSurface editor) return;
         var page = tabs.TabPages.Cast<TabPage>().FirstOrDefault(t => EditorOf(t) == editor); if (page is null) return;
         UpdateTitle(page);
         if (ReferenceEquals(page, tabs.SelectedTab) && aiChatViewModel is not null)
@@ -1390,7 +1391,7 @@ public sealed class Form1 : Form
         ScheduleLiveAnalysis(editor);
     }
 
-    private void ScheduleLiveAnalysis(CodeEditorSurface editor)
+    private void ScheduleLiveAnalysis(ICodeEditorSurface editor)
     {
         var extension = Path.GetExtension(PathOf() ?? ".cs");
         if (!string.IsNullOrEmpty(extension) && !string.Equals(extension, ".cs", StringComparison.OrdinalIgnoreCase)) return;
@@ -1400,7 +1401,7 @@ public sealed class Form1 : Form
         _ = AnalyzeAfterPauseAsync(editor, cancellation.Token);
     }
 
-    private async Task AnalyzeAfterPauseAsync(CodeEditorSurface editor, CancellationToken cancellationToken)
+    private async Task AnalyzeAfterPauseAsync(ICodeEditorSurface editor, CancellationToken cancellationToken)
     {
         try
         {
@@ -1980,7 +1981,7 @@ public sealed class Form1 : Form
         {
             settings.EditorFontSize = 13;
             settingsService.Save(settings);
-            foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<CodeEditorSurface>()))
+            foreach (var surface in tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<ICodeEditorSurface>()))
                 ApplyEditorSettings(surface);
             status.Text = "Taille du texte réinitialisée : 13 pt";
             return true;

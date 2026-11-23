@@ -48,12 +48,27 @@ public sealed class ConsoleBuffer
     {
         if (string.IsNullOrEmpty(chunk)) return;
 
+        foreach (var segment in AnsiConsoleParser.Parse(chunk, kind))
+            AppendPlain(segment.Text, segment.Kind);
+
+        Trim();
+    }
+
+    private void AppendPlain(string chunk, OutputKind kind)
+    {
+        if (string.IsNullOrEmpty(chunk)) return;
+
         var parts = chunk.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
         for (int i = 0; i < parts.Length; i++)
         {
             bool endsLine = i < parts.Length - 1;
             string part = parts[i];
             if (part.Length == 0 && !endsLine) continue;
+            if (part.Length == 0 && endsLine)
+            {
+                _open = null;
+                continue;
+            }
 
             if (_open == null || _open.Kind != kind)
             {
@@ -65,7 +80,6 @@ public sealed class ConsoleBuffer
             if (endsLine) _open = null;
         }
 
-        Trim();
     }
 
     public void AppendLine(string text, OutputKind kind) => Append(text + "\n", kind);

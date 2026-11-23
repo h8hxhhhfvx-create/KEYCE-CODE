@@ -11,6 +11,8 @@ namespace KeyceCode.Services
 {
     public class CodeAnalysisService
     {
+        private static readonly Lazy<IReadOnlyList<MetadataReference>> PlatformReferences = new(CreatePlatformReferences);
+
         public List<AppDiagnostic> Analyze(string sourceCode)
         {
             List<AppDiagnostic> errors = new List<AppDiagnostic>();
@@ -18,27 +20,11 @@ namespace KeyceCode.Services
             // 1. Lire le code C#
             SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
 
-            // 2. Récupérer les bibliothèques .NET disponibles
-            string? trustedAssemblies =
-                AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string;
-
-            if (string.IsNullOrEmpty(trustedAssemblies))
-            {
-                throw new InvalidOperationException(
-                    "Impossible de récupérer les références .NET."
-                );
-            }
-
-            var references = trustedAssemblies
-                .Split(Path.PathSeparator)
-                .Select(path => MetadataReference.CreateFromFile(path))
-                .ToList();
-
-            // 3. Créer une compilation temporaire
+            // 2. Créer une compilation temporaire avec les références mises en cache.
             CSharpCompilation compilation = CSharpCompilation.Create(
                 "CodeAnalysis",
                 syntaxTrees: new[] { syntaxTree },
-                references: references,
+                references: PlatformReferences.Value,
                 options: new CSharpCompilationOptions(
                     OutputKind.DynamicallyLinkedLibrary
                 )
@@ -83,6 +69,19 @@ namespace KeyceCode.Services
             }
 
             return errors;
+        }
+
+        private static IReadOnlyList<MetadataReference> CreatePlatformReferences()
+        {
+            string? trustedAssemblies = AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string;
+            if (string.IsNullOrEmpty(trustedAssemblies))
+                throw new InvalidOperationException("Impossible de récupérer les références .NET.");
+
+            return trustedAssemblies
+                .Split(Path.PathSeparator)
+                .Where(File.Exists)
+                .Select(path => MetadataReference.CreateFromFile(path))
+                .ToArray();
         }
     }
 }

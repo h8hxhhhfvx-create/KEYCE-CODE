@@ -24,22 +24,48 @@ public sealed class DebuggerService : IAsyncDisposable
     public event Action<string>? OutputReceived;
     public event Action<DebugSnapshot>? SnapshotUpdated;
     public bool IsRunning => adapter is { HasExited: false };
+    public string? PreferredAdapterPath { get; set; }
 
     public string? FindAdapter()
     {
+        if (!string.IsNullOrWhiteSpace(PreferredAdapterPath) && File.Exists(PreferredAdapterPath))
+            return Path.GetFullPath(PreferredAdapterPath);
+
         var candidates = new[]
         {
             Environment.GetEnvironmentVariable("KEYCE_VSDBG_PATH"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft Visual Studio", "18", "Community", "Common7", "IDE", "vsdbg", "vsdbg.exe"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft Visual Studio", "2022", "Community", "Common7", "IDE", "vsdbg", "vsdbg.exe")
         };
-        return candidates.FirstOrDefault(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path));
+        var directMatch = candidates.FirstOrDefault(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path));
+        if (directMatch is not null) return directMatch;
+
+        foreach (var root in new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft Visual Studio"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft Visual Studio"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Microsoft Visual Studio")
+        }.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var match = Directory.EnumerateFiles(root, "vsdbg.exe", SearchOption.AllDirectories)
+                    .Where(path => path.Contains(Path.Combine("Common7", "IDE", "vsdbg"), StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(path => File.GetLastWriteTimeUtc(path))
+                    .FirstOrDefault();
+                if (match is not null) return match;
+            }
+            catch (UnauthorizedAccessException) { }
+            catch (IOException) { }
+        }
+
+        return null;
     }
 
     public async Task StartAsync(string program, string workingDirectory, IReadOnlyList<DebugBreakpoint> breakpoints, CancellationToken cancellationToken = default)
     {
         if (IsRunning) throw new InvalidOperationException("Un débogage est déjà en cours.");
-        var adapterPath = FindAdapter() ?? throw new FileNotFoundException("vsdbg.exe est introuvable. Installez les outils de débogage .NET.");
+        var adapterPath = FindAdapter() ?? throw new FileNotFoundException("vsdbg.exe est introuvable. Installez Visual Studio ou renseignez son chemin dans les paramètres.");
         if (!File.Exists(program)) throw new FileNotFoundException("Programme à déboguer introuvable.", program);
         activeBreakpoints = breakpoints.ToArray();
         debugProgramPath = Path.GetFullPath(program);
@@ -236,6 +262,27 @@ public sealed class DebuggerService : IAsyncDisposable
             }
             if (!root.TryGetProperty("type", out var type) || type.GetString() != "response" || !root.TryGetProperty("command", out var command)) return;
             var commandName = command.GetString();
+            if (commandName == "setBreakpoints")
+            {
+                if (root.TryGetProperty("success", out var breakpointSuccess) && !breakpointSuccess.GetBoolean())
+                {
+                    var message = root.TryGetProperty("message", out var breakpointError)
+                        ? breakpointError.GetString()
+                        : "L’adaptateur a refusé les points d’arrêt.";
+                    OutputReceived?.Invoke($"Points d’arrêt refusés : {message}\r\n");
+                }
+                else if (root.TryGetProperty("body", out var breakpointBody) &&
+                         breakpointBody.TryGetProperty("breakpoints", out var breakpointList))
+                {
+                    var pending = breakpointList.EnumerateArray()
+                        .Where(item => item.TryGetProperty("verified", out var verified) && !verified.GetBoolean())
+                        .Select(item => item.TryGetProperty("line", out var line) ? line.GetInt32().ToString() : "?")
+                        .ToArray();
+                    if (pending.Length > 0)
+                        OutputReceived?.Invoke($"Points d’arrêt en attente (non vérifiés) : lignes {string.Join(", ", pending)}.\r\n");
+                }
+                return;
+            }
             if (commandName == "configurationDone")
             {
                 if (root.TryGetProperty("success", out var success) && success.GetBoolean())
