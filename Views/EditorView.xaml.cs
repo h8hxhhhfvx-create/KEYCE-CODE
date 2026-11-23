@@ -264,6 +264,18 @@ public partial class EditorView : WpfUserControl
     public void ApplyAppearance(AppSettings settings)
     {
         var dark = !string.Equals(settings.Theme, "Light", StringComparison.OrdinalIgnoreCase);
+        ApplyThemeColors(dark);
+        Editor.FontSize = Math.Clamp(settings.EditorFontSize, 8, 32);
+        indentSize = Math.Clamp(settings.TabSize, 1, 16);
+        Editor.Options.IndentationSize = indentSize;
+        Editor.Options.ConvertTabsToSpaces = true;
+        Editor.WordWrap = settings.WordWrap;
+    }
+
+    public void SetTheme(bool dark) => ApplyThemeColors(dark);
+
+    private void ApplyThemeColors(bool dark)
+    {
         var background = dark ? "#1E2128" : "#FAFAFA";
         var foreground = dark ? "#DCDCDC" : "#202020";
         var minimapBackground = dark ? "#181A20" : "#F0F2F5";
@@ -274,11 +286,6 @@ public partial class EditorView : WpfUserControl
         MiniMapBorder.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(minimapBackground));
         MiniMapScrollViewer.Background = MiniMapBorder.Background;
         MiniMapText.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(minimapForeground));
-        Editor.FontSize = Math.Clamp(settings.EditorFontSize, 8, 32);
-        indentSize = Math.Clamp(settings.TabSize, 1, 16);
-        Editor.Options.IndentationSize = indentSize;
-        Editor.Options.ConvertTabsToSpaces = true;
-        Editor.WordWrap = settings.WordWrap;
     }
 
     public void SetExamMode(bool enabled) => examMode = enabled;

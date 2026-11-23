@@ -716,7 +716,7 @@ public sealed class Form1 : Form
             ("Fichier : Nouveau", NewFile),
             ("Fichier : Ouvrir", OpenFile),
             ("Fichier : Enregistrer", SaveCurrent),
-            ("Fichier : Enregistrer tout", SaveAllOpenFiles),
+            ("Fichier : Enregistrer tout", () => _ = SaveAllOpenFiles()),
             ("Fichier : Enregistrer sous", SaveAs),
             ("Fichier : Fermer l’onglet", CloseCurrent),
             ("Fichier : Fermer tous les onglets", CloseAll),
@@ -1161,10 +1161,11 @@ public sealed class Form1 : Form
         status.Text = "Paramètres enregistrés.";
     }
 
-    private void SaveAllOpenFiles()
+    private bool SaveAllOpenFiles()
     {
         foreach (var page in tabs.TabPages.Cast<TabPage>().ToList())
-            if (EditorOf(page)?.Modified == true) SavePage(page);
+            if (EditorOf(page)?.Modified == true && !SavePage(page)) return false;
+        return true;
     }
 
     private void ConfigureAutoSaveTimer()
@@ -1345,14 +1346,14 @@ public sealed class Form1 : Form
         using var dialog = new SaveFileDialog { FileName = PathOf(page) is { } p ? Path.GetFileName(p) : "Sans titre.cs", Filter = "Tous les fichiers (*.*)|*.*" };
         if (dialog.ShowDialog(this) == DialogResult.OK) SavePage(page, dialog.FileName);
     }
-    private void SavePage(TabPage page, string? requestedPath = null)
+    private bool SavePage(TabPage page, string? requestedPath = null)
     {
-        if (EditorOf(page) is not { } editor) return;
+        if (EditorOf(page) is not { } editor) return false;
         var path = requestedPath ?? PathOf(page);
         if (path is null)
         {
             using var dialog = new SaveFileDialog { FileName = "NouveauFichier.cs", Filter = "Tous les fichiers (*.*)|*.*" };
-            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            if (dialog.ShowDialog(this) != DialogResult.OK) return false;
             path = dialog.FileName;
         }
         try
@@ -1370,8 +1371,9 @@ public sealed class Form1 : Form
                 ? $"Formaté et enregistré : {path}"
                 : $"Enregistré : {path}";
             if (workspace is not null) explorer.RefreshProject();
+            return true;
         }
-        catch (Exception ex) { MessageBox.Show(this, $"Impossible d’enregistrer.\n{ex.Message}", "KeyceCode", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        catch (Exception ex) { MessageBox.Show(this, $"Impossible d’enregistrer.\n{ex.Message}", "KeyceCode", MessageBoxButtons.OK, MessageBoxIcon.Error); return false; }
     }
     private void UpdateTitle(TabPage page)
     {

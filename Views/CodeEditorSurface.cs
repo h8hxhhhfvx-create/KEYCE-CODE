@@ -61,6 +61,7 @@ internal sealed class CodeEditorSurface : UserControl, ICodeEditorSurface
 
     public void Select(int start, int length) => editorView.Select(start, length);
     public void ApplyLanguage(string? extension) => editorView.ApplyLanguage(extension);
+    public void SetTheme(bool dark) => editorView.SetTheme(dark);
     public void SetDiagnostics(IEnumerable<Diagnostic> diagnostics) => editorView.SetDiagnostics(diagnostics);
     public void ApplyAppearance(AppSettings settings) => editorView.ApplyAppearance(settings);
     public void Undo() => editorView.Undo();

@@ -148,7 +148,7 @@ public sealed class OutputViewModel : ViewModelBase
     }
 
     /// <summary>À brancher sur l'éditeur : enregistrer tous les fichiers ouverts avant de compiler.</summary>
-    public event Action? SaveAllRequested;
+    public event Func<bool>? SaveAllRequested;
 
     /// <summary>Double-clic sur une erreur : l'éditeur peut ouvrir le fichier et aller à la ligne.</summary>
     public event Action<BuildDiagnostic>? DiagnosticActivated;
@@ -167,7 +167,11 @@ public sealed class OutputViewModel : ViewModelBase
             return;
         }
 
-        SaveAllRequested?.Invoke();
+        if (SaveAllRequested?.Invoke() == false)
+        {
+            Status = "Opération annulée";
+            return;
+        }
 
         Log.Clear();
         Diagnostics.Clear();
