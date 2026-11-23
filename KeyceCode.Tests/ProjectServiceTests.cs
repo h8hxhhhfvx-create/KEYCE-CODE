@@ -48,9 +48,51 @@ public sealed class ProjectServiceTests : IDisposable
     }
 
     [Fact]
+    public void OpenProjectFolder_FindsProjectInsideNestedSourceFolder()
+    {
+        var nested = Path.Combine(root, "src", "Demo");
+        Directory.CreateDirectory(nested);
+        var projectPath = Path.Combine(nested, "Demo.csproj");
+        File.WriteAllText(projectPath, string.Empty);
+
+        var project = service.Open(root);
+
+        Assert.Equal(projectPath, project.EntryFilePath);
+    }
+
+    [Fact]
     public void OpenFolderWithoutCSharpProject_ExplainsTheProblem()
     {
         Assert.Throws<InvalidOperationException>(() => service.Open(root));
+    }
+
+    [Fact]
+    public async Task CreateCSharpProject_CreatesBuildableAndRunnableStarterFiles()
+    {
+        var projectPath = service.CreateCSharpProject(root, "Starter");
+
+        Assert.Equal(Path.Combine(root, "Starter", "Starter.csproj"), projectPath);
+        Assert.True(File.Exists(projectPath));
+        Assert.Contains("Bonjour depuis KEYCE CODE", File.ReadAllText(Path.Combine(root, "Starter", "Program.cs")));
+        Assert.Equal(projectPath, service.Open(projectPath).EntryFilePath);
+
+        var compiler = new CompilerService();
+        var build = await compiler.BuildAsync(projectPath);
+        Assert.True(build.Success, string.Join(Environment.NewLine, build.Diagnostics.Select(d => d.Display)));
+
+        var output = new System.Text.StringBuilder();
+        compiler.OutputReceived += (text, _) => output.Append(text);
+        var run = await compiler.RunAsync(projectPath);
+        Assert.True(run.Success, output.ToString());
+        Assert.Contains("Bonjour depuis KEYCE CODE", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateCSharpProject_RejectsDuplicateProjectFolder()
+    {
+        service.CreateCSharpProject(root, "Duplicate");
+
+        Assert.Throws<IOException>(() => service.CreateCSharpProject(root, "Duplicate"));
     }
 
     [Fact]

@@ -23,6 +23,18 @@ public sealed class FileServiceTests : IDisposable
     }
 
     [Fact]
+    public void WriteText_LeavesNoTemporaryFileAfterAtomicReplacement()
+    {
+        var path = Path.Combine(root, "Atomic.cs");
+        File.WriteAllText(path, "old");
+
+        service.WriteText(path, "new");
+
+        Assert.Equal("new", File.ReadAllText(path));
+        Assert.Empty(Directory.EnumerateFiles(root, ".Atomic.cs.*.keyce-tmp"));
+    }
+
+    [Fact]
     public void CreateFile_ReturnsAnAbsolutePathToAnEmptyFile()
     {
         var file = service.CreateFile(root, "Program.cs");
@@ -37,6 +49,16 @@ public sealed class FileServiceTests : IDisposable
     public void CreateFile_RejectsANameContainingAPath()
     {
         Assert.Throws<ArgumentException>(() => service.CreateFile(root, Path.Combine("outside", "Program.cs")));
+    }
+
+    [Fact]
+    public void CreateFile_DoesNotOverwriteAnExistingFile()
+    {
+        var path = Path.Combine(root, "Program.cs");
+        File.WriteAllText(path, "contenu à conserver");
+
+        Assert.Throws<IOException>(() => service.CreateFile(root, "Program.cs"));
+        Assert.Equal("contenu à conserver", File.ReadAllText(path));
     }
 
     [Fact]

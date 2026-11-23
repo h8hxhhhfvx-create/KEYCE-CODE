@@ -12,15 +12,31 @@ public sealed class FileService
         var directory = Path.GetDirectoryName(fullPath)
             ?? throw new IOException("Le dossier du fichier est introuvable.");
         Directory.CreateDirectory(directory);
-        File.WriteAllText(fullPath, content);
+        var temporaryPath = Path.Combine(directory, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.keyce-tmp");
+        try
+        {
+            File.WriteAllText(temporaryPath, content);
+            File.Move(temporaryPath, fullPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+        }
     }
 
     public CodeFile CreateFile(string directory, string name)
     {
         ValidateName(name);
-        var path = Path.Combine(directory, name);
-        using (File.Create(path)) { }
-        return new CodeFile { Name = name, FullPath = Path.GetFullPath(path) };
+        var path = Path.GetFullPath(Path.Combine(directory, name));
+        try
+        {
+            using (File.Open(path, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { }
+        }
+        catch (IOException exception) when (File.Exists(path) || Directory.Exists(path))
+        {
+            throw new IOException("Un fichier ou dossier portant ce nom existe déjà.", exception);
+        }
+        return new CodeFile { Name = name, FullPath = path };
     }
 
     public string CreateDirectory(string parentDirectory, string name)

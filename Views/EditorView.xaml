@@ -6,7 +6,7 @@
     <Grid Background="#1E2128">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="120" />
+            <ColumnDefinition Width="96" />
         </Grid.ColumnDefinitions>
         <avalonedit:TextEditor x:Name="Editor"
                                Grid.Column="0"
@@ -21,14 +21,14 @@
                                VerticalScrollBarVisibility="Auto"
                                WordWrap="False"
                                IsReadOnly="False" />
-        <Border Grid.Column="1" Background="#181A20" BorderBrush="#30343D" BorderThickness="1,0,0,0">
+        <Border x:Name="MiniMapBorder" Grid.Column="1" Background="#181A20" BorderBrush="#30343D" BorderThickness="1,0,0,0">
             <ScrollViewer x:Name="MiniMapScrollViewer"
                           VerticalScrollBarVisibility="Hidden"
                           HorizontalScrollBarVisibility="Hidden"
                           Background="#181A20"
                           MouseDown="OnMiniMapMouseDown">
                 <TextBlock x:Name="MiniMapText"
-                           Margin="5,6"
+                           Margin="4,6"
                            Foreground="#737B8C"
                            FontFamily="Cascadia Mono"
                            FontSize="4"

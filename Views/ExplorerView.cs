@@ -83,6 +83,21 @@ public sealed class ExplorerView : UserControl
         catch (Exception ex) { ShowError("Impossible d’actualiser l’explorateur", ex); }
     }
 
+    public void ApplyTheme(bool dark)
+    {
+        var background = dark ? Color.FromArgb(30, 33, 40) : Color.FromArgb(248, 249, 251);
+        var buttonBackground = dark ? Color.FromArgb(45, 49, 58) : Color.FromArgb(232, 235, 240);
+        var foreground = dark ? Color.Gainsboro : Color.FromArgb(32, 35, 40);
+        BackColor = background;
+        tree.BackColor = background;
+        tree.ForeColor = foreground;
+        foreach (Control child in Controls)
+        {
+            child.BackColor = child is Button ? buttonBackground : background;
+            child.ForeColor = foreground;
+        }
+    }
+
     private void RenderProject()
     {
         tree.BeginUpdate();

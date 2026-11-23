@@ -1,59 +1,104 @@
 # KEYCE-CODE
 
-Éditeur de code de bureau développé en C# et Windows Forms pour le projet collaboratif KEYCE-CODE.
+Éditeur de code de bureau Windows développé en C# pour le projet collaboratif
+KEYCE-CODE. La fenêtre principale est Windows Forms ; les vues qui nécessitent
+WPF (AvalonEdit, terminal, compilation et assistant) sont hébergées avec
+`ElementHost`.
 
 ## Prérequis
 
 - Windows 10 ou 11
 - SDK .NET 10
+- Pour le débogage : Visual Studio avec `vsdbg.exe` (ou le chemin défini dans
+  `KEYCE_VSDBG_PATH`)
 
-## Lancer l’application
+## Fonctionnalités disponibles
+
+### Gestion des fichiers et projets
+
+- créer des projets C# de démarrage, ouvrir, enregistrer et fermer des fichiers avec confirmation des
+  modifications non enregistrées ;
+- enregistrer tous les onglets ou les fermer en une seule commande avec
+  confirmation des modifications ;
+- ouvrir une solution ou un projet C# (`.sln`, `.slnx`, `.csproj`) ;
+- retrouver les dix derniers projets dans le menu « Projets récents » ;
+- parcourir les dossiers et fichiers dans l’explorateur ;
+- créer, renommer et supprimer des fichiers et dossiers ;
+- afficher les erreurs d’accès ou de chemin dans l’interface.
+
+### Éditeur
+
+- coloration syntaxique C# et coloration intégrée pour plusieurs extensions ;
+- numéros de lignes, onglets, indicateur de modification, annuler et rétablir ;
+- indentation automatique et fermeture des parenthèses, crochets, accolades et
+  guillemets ;
+- mini-carte de navigation ;
+- auto-complétion C# (`Ctrl+Espace`) ;
+- recherche, remplacement, navigation vers une ligne et recherche dans les
+  fichiers ;
+- navigation vers les symboles (`Ctrl+Maj+O`), vers la définition (`F12`) et
+  renommage contrôlé (`F2`) ;
+- formatage C# avec Roslyn en respectant la taille de tabulation choisie ;
+- analyse en direct et diagnostics avec ligne, colonne et code d’erreur ;
+- thèmes clair/sombre, retour à la ligne, taille de police et tabulations.
+- boîte de paramètres unifiée pour modifier ces options et la configuration
+  Ollama sans quitter l’éditeur.
+
+### Exécution et outils de développement
+
+- compilation et exécution de projets C# avec le SDK .NET ;
+- exécution de fichiers Python, JavaScript, PHP, Ruby, Perl, Lua, Go, Java,
+  PowerShell, batch et shell lorsque l’outil correspondant est installé ;
+- console de sortie avec diagnostics cliquables ;
+- terminal intégré avec historique, saisie standard et arrêt de commande ;
+- lancement des tests du projet ;
+- points d’arrêt, lancement/arrêt du débogage, continuation et pas-à-pas avec
+  `vsdbg.exe` ;
+- affichage des frames et variables locales lors d’un arrêt.
+- mode apprentissage et mode examen, avec protections adaptées pour un contexte
+  pédagogique.
+
+### Git et assistant IA
+
+- affichage de la branche et des fichiers modifiés ;
+- stage, commit, pull et push depuis le menu Git ;
+- conversation locale avec Ollama, configuration de l’endpoint et du modèle ;
+- propositions de modifications de l’agent IA avec aperçu et confirmation ;
+- restauration de la dernière modification proposée par l’agent.
+- palette de commandes (`Ctrl+Maj+P`) et système d’extensions DLL chargé depuis
+  le dossier utilisateur `KeyceCode/Extensions`.
+
+## Organisation du code
+
+- `Form1.cs` : fenêtre principale, menus, barre d’outils et orchestration ;
+- `Views/CodeEditorSurface.cs` : surface AvalonEdit ;
+- `Views/ExplorerView.cs` : explorateur de projet Windows Forms ;
+- `Views/*.xaml` : vues WPF hébergées dans les onglets inférieurs ;
+- `Services/` : fichiers, compilation, exécution, analyse, Git, IA, terminal,
+  tests et débogage ;
+- `Models/` : état métier et résultats structurés ;
+- `KeyceCode.Tests/` : tests unitaires et tests de services.
+
+## Vérifier le projet
 
 Depuis Git Bash ou PowerShell, dans le dossier du projet :
+
+```bash
+dotnet build -c Release -p:UseSharedCompilation=false
+dotnet test KeyceCode.Tests/KeyceCode.Tests.csproj --no-restore \
+  -p:UseSharedCompilation=false
+```
+
+Pour lancer l’application :
 
 ```bash
 dotnet run --project KeyceCode.csproj
 ```
 
-## Gestion des fichiers et projets
+Le test du débogueur nécessite un projet C# compilable et un `vsdbg.exe` compatible avec l’hôte DAP. Certaines versions de `vsdbg` installées avec Visual Studio refusent les points d’arrêt lorsqu’elles sont pilotées hors de leur hôte officiel ; KEYCE CODE affiche alors l’erreur retournée par l’adaptateur. Si
+Visual Studio est installé dans un autre emplacement, définir
+`KEYCE_VSDBG_PATH` vers l’exécutable avant de lancer KEYCE-CODE.
 
-- Créer un fichier vierge ou un fichier depuis l’explorateur
-- Ouvrir un fichier existant et éviter d’ouvrir deux fois le même chemin dans des onglets différents
-- Enregistrer ou utiliser « Enregistrer sous »
-- Détecter les modifications non enregistrées et demander confirmation avant fermeture
-- Ouvrir une solution ou un projet C# (`.sln`, `.slnx`, `.csproj`) et parcourir les dossiers/fichiers
-- Créer, renommer et supprimer des fichiers et dossiers depuis le menu contextuel de l’explorateur
-- Afficher les erreurs d’accès ou de chemin dans l’interface
-
-## Organisation du code
-
-- `Models/` : `Project` et `CodeFile`
-- `Services/` : opérations sur les fichiers et chargement de projets
-- `ViewModels/` : état et actions du projet courant
-- `Views/ExplorerView.cs` : explorateur de projet Windows Forms
-
-## Éditeur de code
-
-La zone d’édition utilise AvalonEdit, hébergé dans Windows Forms grâce à
-l’interopérabilité WPF. Cela permet de conserver la fenêtre actuelle du projet
-tout en disposant d’un vrai moteur d’édition WPF extensible.
-
-La partie éditeur comprend :
-
-- coloration syntaxique C# ;
-- numéros de lignes ;
-- onglets et indicateur de modification ;
-- annuler et rétablir ;
-- indentation automatique ;
-- fermeture automatique des parenthèses, crochets, accolades et guillemets ;
-- mini-carte de navigation à droite de l’éditeur ;
-- modèles `EditorTab` et `EditorViewModel` prêts pour les futurs services.
-
-Les tests de gestion des onglets se trouvent dans `KeyceCode.Tests` et se
-lancent avec :
-
-```bash
-dotnet test KeyceCode.Tests/KeyceCode.Tests.csproj
-```
-
-Le cahier des charges impose Windows Forms ; l’explorateur est donc un contrôle C# et non une vue WPF/XAML.
+Le cahier des charges impose Windows ; l’application cible donc
+`net10.0-windows` et utilise Windows Forms comme hôte principal, tout en
+conservant WPF pour les composants qui en tirent parti.

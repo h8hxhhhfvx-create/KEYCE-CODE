@@ -1,28 +1,60 @@
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using ICSharpCode.AvalonEdit.CodeCompletion;
 using ICSharpCode.AvalonEdit.Document;
+using ICSharpCode.AvalonEdit.Editing;
+using ICSharpCode.AvalonEdit.Rendering;
+using KeyceCode.Models;
 using KeyceCode.Services;
 using WpfUserControl = System.Windows.Controls.UserControl;
+using WpfMouseEventArgs = System.Windows.Input.MouseEventArgs;
 
 namespace KeyceCode.Views;
 
 public partial class EditorView : WpfUserControl
 {
-    private const int IndentSize = 4;
     private readonly SyntaxHighlightingService highlightingService = new();
+    private readonly AutoCompleteService autoCompleteService = new();
+    private CompletionWindow? completionWindow;
     private string savedText = string.Empty;
+    private int indentSize = 4;
     private bool suppressChanges;
+    private bool examMode;
+    private readonly DiagnosticUnderlineRenderer diagnosticRenderer = new();
+    private readonly DiagnosticMargin diagnosticMargin = new();
+    private IReadOnlyList<DiagnosticMarker> diagnosticMarkers = [];
 
     public EditorView()
     {
         InitializeComponent();
         highlightingService.Apply(Editor);
+        Editor.TextArea.TextView.BackgroundRenderers.Add(diagnosticRenderer);
+        Editor.TextArea.LeftMargins.Insert(0, diagnosticMargin);
+        Editor.TextArea.TextView.ScrollOffsetChanged += (_, _) => diagnosticMargin.InvalidateVisual();
         Editor.TextArea.TextEntering += OnTextEntering;
         Editor.TextArea.TextEntered += OnTextEntered;
+        Editor.TextArea.KeyDown += OnEditorKeyDown;
+        Editor.TextArea.TextView.MouseMove += OnDiagnosticMouseMove;
+        Editor.TextArea.TextView.MouseLeave += OnDiagnosticMouseLeave;
+        Editor.AddHandler(System.Windows.Input.CommandManager.PreviewExecutedEvent,
+            new System.Windows.Input.ExecutedRoutedEventHandler(OnPreviewExecuted));
+        Editor.TextArea.Caret.PositionChanged += (_, _) => CaretPositionChanged?.Invoke(this, EventArgs.Empty);
         Editor.TextChanged += OnTextChanged;
         UpdateMiniMap();
     }
 
     public event EventHandler? ContentChanged;
+    public event EventHandler? CaretPositionChanged;
+
+    public (int Line, int Column) CaretPosition
+    {
+        get
+        {
+            var line = Editor.Document.GetLineByOffset(Editor.CaretOffset);
+            return (line.LineNumber, Editor.CaretOffset - line.Offset + 1);
+        }
+    }
 
     public string Text
     {
@@ -67,21 +99,92 @@ public partial class EditorView : WpfUserControl
         Editor.Focus();
     }
 
-    public void SelectLine(int lineNumber, int column = 1)
-    {
-        if (lineNumber < 1 || lineNumber > Editor.Document.LineCount) return;
-        var line = Editor.Document.GetLineByNumber(lineNumber);
-        var offset = line.Offset + Math.Clamp(column - 1, 0, line.Length);
-        Editor.Select(offset, 0);
-        Editor.TextArea.Caret.BringCaretToView();
-        Editor.Focus();
-    }
-
     public void Undo() => Editor.Undo();
     public void Redo() => Editor.Redo();
     public void Cut() => Editor.Cut();
     public void Copy() => Editor.Copy();
     public void Paste() => Editor.Paste();
+
+    public void ReplaceText(string text)
+    {
+        Editor.Document.Replace(0, Editor.Document.TextLength, text ?? string.Empty);
+        Editor.Focus();
+    }
+
+    public void SetDiagnostics(IEnumerable<Diagnostic> diagnostics)
+    {
+        var markers = new List<DiagnosticMarker>();
+        foreach (var diagnostic in diagnostics)
+        {
+            if (diagnostic.Line <= 0 || diagnostic.Line > Editor.Document.LineCount) continue;
+
+            var startLine = Editor.Document.GetLineByNumber(diagnostic.Line);
+            var start = Math.Clamp(startLine.Offset + Math.Max(0, diagnostic.Column - 1), startLine.Offset, startLine.EndOffset);
+            var end = start + 1;
+            if (diagnostic.EndLine >= diagnostic.Line && diagnostic.EndLine <= Editor.Document.LineCount)
+            {
+                var endLine = Editor.Document.GetLineByNumber(diagnostic.EndLine);
+                end = Math.Clamp(endLine.Offset + Math.Max(0, diagnostic.EndColumn - 1), start, endLine.EndOffset);
+            }
+
+            if (end <= start) end = Math.Min(Editor.Document.TextLength, start + 1);
+            if (end > start)
+                markers.Add(new DiagnosticMarker(
+                    start,
+                    end - start,
+                    diagnostic.Severity,
+                    diagnostic.Line,
+                    diagnostic.Code,
+                    diagnostic.Message));
+        }
+
+        diagnosticMarkers = markers;
+        diagnosticRenderer.SetMarkers(markers);
+        diagnosticMargin.SetMarkers(markers);
+        ClearDiagnosticToolTip();
+        Editor.TextArea.TextView.Redraw();
+        diagnosticMargin.InvalidateVisual();
+    }
+
+    private void OnDiagnosticMouseMove(object? sender, WpfMouseEventArgs e)
+    {
+        var position = Editor.GetPositionFromPoint(e.GetPosition(Editor));
+        if (position is null) return;
+
+        var offset = Editor.Document.GetOffset(position.Value.Location);
+        var marker = diagnosticMarkers.FirstOrDefault(item =>
+            offset >= item.StartOffset && offset <= item.StartOffset + item.Length);
+        if (marker.Length == 0) return;
+
+        var severity = string.Equals(marker.Severity, "error", StringComparison.OrdinalIgnoreCase)
+            ? "Erreur"
+            : "Avertissement";
+        var panel = new StackPanel { MaxWidth = 520 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"{severity} {marker.Code}",
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.White)
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = marker.Message,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.White)
+        });
+        var tooltip = new System.Windows.Controls.ToolTip { Content = panel, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(45, 45, 48)) };
+        System.Windows.Controls.ToolTipService.SetShowDuration(tooltip, 30000);
+        Editor.ToolTip = tooltip;
+        tooltip.IsOpen = true;
+    }
+
+    private void OnDiagnosticMouseLeave(object? sender, WpfMouseEventArgs e) => ClearDiagnosticToolTip();
+
+    private void ClearDiagnosticToolTip()
+    {
+        if (Editor.ToolTip is System.Windows.Controls.ToolTip tooltip) tooltip.IsOpen = false;
+        Editor.ToolTip = null;
+    }
 
     private void OnTextChanged(object? sender, EventArgs e)
     {
@@ -91,18 +194,35 @@ public partial class EditorView : WpfUserControl
 
     public void ApplyLanguage(string? extension) => highlightingService.Apply(Editor, extension);
 
-    public void SetTheme(bool dark)
+    public void ApplyAppearance(AppSettings settings)
     {
-        var background = dark ? System.Drawing.Color.FromArgb(30, 33, 40) : System.Drawing.Color.FromArgb(255, 255, 255);
-        var foreground = dark ? System.Drawing.Color.FromArgb(220, 220, 220) : System.Drawing.Color.FromArgb(35, 40, 48);
-        var gutter = dark ? System.Drawing.Color.FromArgb(125, 132, 145) : System.Drawing.Color.FromArgb(110, 118, 128);
-        var minimap = dark ? System.Drawing.Color.FromArgb(24, 26, 32) : System.Drawing.Color.FromArgb(243, 245, 248);
-        Editor.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(background.R, background.G, background.B));
-        Editor.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(foreground.R, foreground.G, foreground.B));
-        Editor.LineNumbersForeground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(gutter.R, gutter.G, gutter.B));
-        MiniMapText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(gutter.R, gutter.G, gutter.B));
-        MiniMapScrollViewer.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(minimap.R, minimap.G, minimap.B));
-        if (MiniMapScrollViewer.Parent is System.Windows.Controls.Border border) border.Background = MiniMapScrollViewer.Background;
+        var dark = !string.Equals(settings.Theme, "Light", StringComparison.OrdinalIgnoreCase);
+        var background = dark ? "#1E2128" : "#FAFAFA";
+        var foreground = dark ? "#DCDCDC" : "#202020";
+        var minimapBackground = dark ? "#181A20" : "#F0F2F5";
+        var minimapForeground = dark ? "#737B8C" : "#7A8492";
+        Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(background));
+        Editor.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(background));
+        Editor.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(foreground));
+        MiniMapBorder.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(minimapBackground));
+        MiniMapScrollViewer.Background = MiniMapBorder.Background;
+        MiniMapText.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(minimapForeground));
+        Editor.FontSize = Math.Clamp(settings.EditorFontSize, 8, 32);
+        indentSize = Math.Clamp(settings.TabSize, 1, 16);
+        Editor.Options.IndentationSize = indentSize;
+        Editor.Options.ConvertTabsToSpaces = true;
+        Editor.WordWrap = settings.WordWrap;
+    }
+
+    public void SetExamMode(bool enabled) => examMode = enabled;
+
+    private void OnPreviewExecuted(object sender, System.Windows.Input.ExecutedRoutedEventArgs e)
+    {
+        if (!examMode) return;
+        if (e.Command == System.Windows.Input.ApplicationCommands.Copy ||
+            e.Command == System.Windows.Input.ApplicationCommands.Cut ||
+            e.Command == System.Windows.Input.ApplicationCommands.Paste)
+            e.Handled = true;
     }
 
     private void UpdateMiniMap()
@@ -142,18 +262,45 @@ public partial class EditorView : WpfUserControl
 
     private void OnTextEntered(object? sender, System.Windows.Input.TextCompositionEventArgs e)
     {
+        if (e.Text is not "\n" && (char.IsLetterOrDigit(e.Text.FirstOrDefault()) || e.Text == "."))
+        {
+            ShowCompletion();
+            return;
+        }
         if (e.Text != "\n") return;
         var caretOffset = Editor.CaretOffset;
         if (caretOffset == 0) return;
         var previousLine = Editor.Document.GetLineByOffset(caretOffset - 1);
         var previousText = Editor.Document.GetText(previousLine.Offset, previousLine.Length);
         var indentation = new string(previousText.TakeWhile(c => c is ' ' or '\t').ToArray());
-        if (previousText.TrimEnd().EndsWith("{", StringComparison.Ordinal)) indentation += new string(' ', IndentSize);
+        if (previousText.TrimEnd().EndsWith("{", StringComparison.Ordinal)) indentation += new string(' ', indentSize);
         if (GetCurrentLineStartsWithClosingBrace(caretOffset))
-            indentation = indentation.Length >= IndentSize ? indentation[..^IndentSize] : string.Empty;
+            indentation = indentation.Length >= indentSize ? indentation[..^indentSize] : string.Empty;
         if (indentation.Length == 0) return;
         Editor.Document.Insert(caretOffset, indentation);
         Editor.CaretOffset = caretOffset + indentation.Length;
+    }
+
+    private void ShowCompletion()
+    {
+        completionWindow?.Close();
+        var suggestions = autoCompleteService.GetCompletionItems(Editor.Text, Editor.CaretOffset);
+        if (suggestions.Count == 0) return;
+        completionWindow = new CompletionWindow(Editor.TextArea);
+        foreach (var suggestion in suggestions)
+            completionWindow.CompletionList.CompletionData.Add(new EditorCompletionData(suggestion));
+        completionWindow.Closed += (_, _) => completionWindow = null;
+        completionWindow.Show();
+    }
+
+    private void OnEditorKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Space &&
+            System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Control))
+        {
+            ShowCompletion();
+            e.Handled = true;
+        }
     }
 
     private bool GetCurrentLineStartsWithClosingBrace(int offset)
@@ -174,4 +321,109 @@ public partial class EditorView : WpfUserControl
         '\'' => '\'',
         _ => null
     };
+
+    private sealed class EditorCompletionData(CompletionSuggestion suggestion) : ICompletionData
+    {
+        public System.Windows.Media.ImageSource? Image => null;
+        public string Text { get; } = suggestion.DisplayText;
+        public object Content => Text;
+        public object Description => suggestion.Kind;
+        public double Priority => 0;
+
+        public void Complete(TextArea textArea, ISegment completionSegment, EventArgs insertionRequestEventArgs)
+        {
+            textArea.Document.Replace(completionSegment, suggestion.InsertText);
+        }
+    }
+
+    private sealed class DiagnosticUnderlineRenderer : IBackgroundRenderer
+    {
+        private IReadOnlyList<DiagnosticMarker> markers = [];
+
+        public KnownLayer Layer => KnownLayer.Selection;
+
+        public void SetMarkers(IReadOnlyList<DiagnosticMarker> value) => markers = value;
+
+        public void Draw(TextView textView, System.Windows.Media.DrawingContext drawingContext)
+        {
+            if (markers.Count == 0) return;
+
+            foreach (var marker in markers)
+            {
+                var segment = new TextSegment { StartOffset = marker.StartOffset, Length = marker.Length };
+                var color = marker.Severity.Equals("Warning", StringComparison.OrdinalIgnoreCase)
+                    ? System.Windows.Media.Colors.Gold
+                    : System.Windows.Media.Colors.Tomato;
+                var pen = new System.Windows.Media.Pen(new System.Windows.Media.SolidColorBrush(color), 1.4);
+                pen.Freeze();
+
+                foreach (var rectangle in BackgroundGeometryBuilder.GetRectsForSegment(textView, segment))
+                {
+                    if (rectangle.Width <= 0) continue;
+                    var geometry = new System.Windows.Media.StreamGeometry();
+                    using (var context = geometry.Open())
+                    {
+                        var y = rectangle.Bottom - 1;
+                        const double wave = 3;
+                        context.BeginFigure(new System.Windows.Point(rectangle.Left, y), false, false);
+                        for (var x = rectangle.Left; x < rectangle.Right; x += wave)
+                            context.LineTo(new System.Windows.Point(Math.Min(x + wave, rectangle.Right), y + (((int)((x - rectangle.Left) / wave) % 2 == 0) ? 1.5 : -1.5)), true, false);
+                    }
+                    geometry.Freeze();
+                    drawingContext.DrawGeometry(null, pen, geometry);
+                }
+            }
+        }
+    }
+
+    private sealed class DiagnosticMargin : ICSharpCode.AvalonEdit.Editing.AbstractMargin
+    {
+        private IReadOnlyList<DiagnosticMarker> markers = [];
+
+        public void SetMarkers(IReadOnlyList<DiagnosticMarker> value) => markers = value;
+
+        protected override System.Windows.Size MeasureOverride(System.Windows.Size availableSize) =>
+            new(16, availableSize.Height);
+
+        protected override void OnRender(System.Windows.Media.DrawingContext drawingContext)
+        {
+            base.OnRender(drawingContext);
+            if (TextView is null || Document is null || !TextView.VisualLinesValid || markers.Count == 0) return;
+
+            foreach (var marker in markers.GroupBy(item => item.Line).Select(group => group.First()))
+            {
+                var visualLine = TextView.GetVisualLine(marker.Line);
+                if (visualLine is null || visualLine.TextLines.Count == 0) continue;
+
+                var textLine = visualLine.TextLines[0];
+                var top = visualLine.GetTextLineVisualYPosition(textLine, VisualYPosition.TextTop) - TextView.ScrollOffset.Y;
+                var bottom = visualLine.GetTextLineVisualYPosition(textLine, VisualYPosition.TextBottom) - TextView.ScrollOffset.Y;
+                if (bottom < 0 || top > ActualHeight) continue;
+
+                var color = marker.Severity.Equals("Warning", StringComparison.OrdinalIgnoreCase)
+                    ? System.Windows.Media.Colors.Gold
+                    : System.Windows.Media.Colors.Tomato;
+                var brush = new System.Windows.Media.SolidColorBrush(color);
+                brush.Freeze();
+                var geometry = new System.Windows.Media.StreamGeometry();
+                using (var context = geometry.Open())
+                {
+                    var centerY = Math.Max(4, (top + bottom) / 2);
+                    context.BeginFigure(new System.Windows.Point(2, centerY - 4), true, true);
+                    context.LineTo(new System.Windows.Point(14, centerY), true, false);
+                    context.LineTo(new System.Windows.Point(2, centerY + 4), true, false);
+                }
+                geometry.Freeze();
+                drawingContext.DrawGeometry(brush, null, geometry);
+            }
+        }
+    }
+
+    private readonly record struct DiagnosticMarker(
+        int StartOffset,
+        int Length,
+        string Severity,
+        int Line,
+        string Code,
+        string Message);
 }
