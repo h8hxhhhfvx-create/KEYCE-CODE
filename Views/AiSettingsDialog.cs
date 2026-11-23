@@ -1,5 +1,6 @@
 using KeyceCode.Models;
 using KeyceCode.Services;
+using System.Net.Http;
 
 namespace KeyceCode.Views;
 
@@ -31,7 +32,9 @@ internal sealed class AiSettingsDialog : Form
         var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Fill, AutoSize = true };
         var ok = new Button { Text = "Enregistrer", DialogResult = DialogResult.OK, AutoSize = true };
         var cancel = new Button { Text = "Annuler", DialogResult = DialogResult.Cancel, AutoSize = true };
-        buttons.Controls.Add(ok); buttons.Controls.Add(cancel); table.Controls.Add(buttons, 1, 8);
+        var test = new Button { Text = "Tester les connexions", AutoSize = true };
+        test.Click += async (_, _) => await TestConnectionsAsync();
+        buttons.Controls.Add(ok); buttons.Controls.Add(cancel); buttons.Controls.Add(test); table.Controls.Add(buttons, 1, 8);
         Controls.Add(table); AcceptButton = ok; CancelButton = cancel;
     }
 
@@ -50,6 +53,34 @@ internal sealed class AiSettingsDialog : Form
         SaveIfEntered(AiProviderFactory.GeminiKey1, gemini1); SaveIfEntered(AiProviderFactory.GeminiKey2, gemini2);
         SaveIfEntered(AiProviderFactory.GroqKey1, groq1); SaveIfEntered(AiProviderFactory.GroqKey2, groq2);
     }
+
+    private async Task TestConnectionsAsync()
+    {
+        var models = GetModels();
+        var candidates = new[]
+        {
+            ("Gemini 1", "https://generativelanguage.googleapis.com/v1beta/openai", models.GeminiModel, Value(gemini1, AiProviderFactory.GeminiKey1)),
+            ("Gemini 2", "https://generativelanguage.googleapis.com/v1beta/openai", models.GeminiModel, Value(gemini2, AiProviderFactory.GeminiKey2)),
+            ("Groq 1", "https://api.groq.com/openai/v1", models.GroqModel, Value(groq1, AiProviderFactory.GroqKey1)),
+            ("Groq 2", "https://api.groq.com/openai/v1", models.GroqModel, Value(groq2, AiProviderFactory.GroqKey2))
+        };
+        var results = new List<string>();
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+        foreach (var (name, endpoint, model, key) in candidates)
+        {
+            if (string.IsNullOrWhiteSpace(key)) { results.Add($"{name} : non configuré"); continue; }
+            try
+            {
+                var provider = new OpenAiCompatibleChatProvider(name, endpoint, key, client);
+                await provider.ChatAsync(model, [("user", "Réponds uniquement OK.")]);
+                results.Add($"{name} : connexion réussie");
+            }
+            catch (Exception ex) { results.Add($"{name} : échec ({ex.Message})"); }
+        }
+        MessageBox.Show(this, string.Join(Environment.NewLine, results), "Test des connexions IA", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    private string? Value(TextBox field, string name) => string.IsNullOrWhiteSpace(field.Text) ? secrets.Get(name) : field.Text.Trim();
 
     public void ApplyTheme(bool dark)
     {
