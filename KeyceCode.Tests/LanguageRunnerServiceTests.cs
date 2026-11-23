@@ -35,6 +35,18 @@ public sealed class LanguageRunnerServiceTests
     }
 
     [Fact]
+    public void Resolve_NativeCompilationsUseDifferentTemporaryOutputs()
+    {
+        var service = new LanguageRunnerService();
+        var first = service.Resolve(Path.Combine(Path.GetTempPath(), "Demo.c"));
+        var second = service.Resolve(Path.Combine(Path.GetTempPath(), "Demo.c"));
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.NotEqual(first!.Arguments, second!.Arguments);
+    }
+
+    [Fact]
     public void Resolve_ReturnsNullForUnknownExtension()
         => Assert.Null(new LanguageRunnerService().Resolve("demo.unknown"));
 }

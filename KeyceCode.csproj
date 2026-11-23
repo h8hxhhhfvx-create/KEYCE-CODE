@@ -19,6 +19,9 @@
     <EmbeddedResource Remove="KeyceCode.Tests\**" />
     <None Remove="KeyceCode.Tests\**" />
     <EmbeddedResource Include="Resources\Syntax\CSharpSyntax.xshd" />
+    <EmbeddedResource Include="Resources\Syntax\GenericCodeSyntax.xshd" />
+    <EmbeddedResource Include="Resources\Syntax\DataSyntax.xshd" />
+    <EmbeddedResource Include="Resources\Syntax\ShellSyntax.xshd" />
     <Content Include="Assets\Brand\keyce-code-official.jpeg" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

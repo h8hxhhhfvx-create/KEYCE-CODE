@@ -8,8 +8,10 @@ static class Program
     ///  The main entry point for the application.
     /// </summary>
     [STAThread]
-    static void Main()
+    static int Main(string[]? args = null)
     {
+        if (args is { Length: >= 2 } && string.Equals(args[0], "--keyce-extension-host", StringComparison.OrdinalIgnoreCase))
+            return ExtensionHostRunner.Run(args[1]);
         // To customize application configuration such as set high DPI settings or default font,
         // see https://aka.ms/applicationconfiguration.
         ApplicationConfiguration.Initialize();
@@ -23,5 +25,6 @@ static class Program
         logger.Info("Application démarrée", "startup");
         Application.Run(new Form1());
         logger.Info("Application fermée", "shutdown");
+        return 0;
     }    
 }
