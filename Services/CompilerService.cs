@@ -5,18 +5,13 @@ using KeyceCode.Models;
 
 namespace KeyceCode.Services;
 
-/// <summary>
-/// Compile et exécute des projets C# via le SDK .NET (commande "dotnet").
-/// - Dossier ou .csproj : dotnet build / dotnet run --project
-/// - Fichier .cs seul   : dotnet build / dotnet run fichier.cs (nécessite le SDK .NET 10)
-/// Les événements sont levés depuis un thread secondaire : le ViewModel doit repasser sur le thread UI.
-/// </summary>
+ 
 public sealed partial class CompilerService
 {
     private volatile bool _busy;
     private ProcessSession? _current;
 
-    /// <summary>Texte produit par dotnet / par le programme (stdout et stderr).</summary>
+    
     public event Action<string, OutputKind>? OutputReceived;
 
     public bool IsBusy => _busy;
