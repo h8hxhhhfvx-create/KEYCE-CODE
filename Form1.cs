@@ -138,7 +138,9 @@ public sealed class Form1 : Form
     }
     private void OnEditorChanged(object? sender, EventArgs e)
     {
-        
+        if (sender is not CodeEditorSurface editor) return;
+        var page = tabs.TabPages.Cast<TabPage>().FirstOrDefault(t => EditorOf(t) == editor); if (page is null) return;
+        UpdateTitle(page);
     }
 
     private void UpdateOpenPaths(string oldPath, string newPath)
