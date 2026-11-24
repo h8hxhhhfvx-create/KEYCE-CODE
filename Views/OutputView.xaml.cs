@@ -1,6 +1,7 @@
 using KeyceCode.ViewModels;
 
 namespace KeyceCode.Views;
+ public 
 
 public partial class OutputView
 {
