@@ -4,10 +4,7 @@ using KeyceCode.Services;
 
 namespace KeyceCode.ViewModels;
 
-/// <summary>
-/// Console de sortie : boutons Compiler / Exécuter / Arrêter, affichage des résultats,
-/// des erreurs de compilation et saisie clavier pour les programmes interactifs.
-/// </summary>
+
 public sealed class OutputViewModel : ViewModelBase
 {
     private readonly CompilerService _compiler = new();

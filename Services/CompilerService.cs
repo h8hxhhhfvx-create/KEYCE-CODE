@@ -40,13 +40,13 @@ public sealed partial class CompilerService
         return ExecuteAsync(args, target.WorkingDirectory, ct);
     }
 
-    /// <summary>Envoie une ligne au programme en cours (Console.ReadLine, etc.).</summary>
+    
     public void SendInput(string text) => _current?.Write(text + Environment.NewLine);
 
-    /// <summary>Arrête le programme ou la compilation en cours.</summary>
+    
     public void Stop() => _current?.Kill();
 
-    // ------------------------------------------------------------------
+    
 
     private async Task<ExecutionResult> ExecuteAsync(string args, string workingDirectory, CancellationToken ct)
     {
