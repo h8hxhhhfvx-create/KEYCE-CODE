@@ -156,21 +156,7 @@ public sealed class Form1 : Form
         }
     }
 
-    private bool ConfirmOpenFilesBeforeDelete(string targetPath)
-    {
-        var fullTarget = Path.GetFullPath(targetPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var prefix = fullTarget + Path.DirectorySeparatorChar;
-        var openPages = tabs.TabPages.Cast<TabPage>()
-            .Where(page => PathOf(page) is { } path &&
-                (string.Equals(Path.GetFullPath(path), fullTarget, StringComparison.OrdinalIgnoreCase) ||
-                 Path.GetFullPath(path).StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
-            .ToList();
-        foreach (var page in openPages)
-            if (!CanClose(page)) return false;
-        foreach (var page in openPages) { tabs.TabPages.Remove(page); page.Dispose(); }
-        if (tabs.TabCount == 0) NewFile();
-        return true;
-    }
+    
     private bool CanClose(TabPage page)
     {
         if (EditorOf(page)?.Modified == true)
